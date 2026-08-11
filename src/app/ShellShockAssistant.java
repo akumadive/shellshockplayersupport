@@ -20,7 +20,7 @@ import vision.BlobDetector;
 import vision.PlayerDetector;
 import vision.TerrainDetector;
 import vision.WindDetector;
-import vision.WindDetector.WindDirection;
+import vision.WindDetector.WindResult;
 
 import java.awt.image.BufferedImage;
 import java.util.List;
@@ -31,21 +31,6 @@ public class ShellShockAssistant {
     public static void main(String[] args) {
 
         try {
-
-            // =====================================================
-            // TEMPORARY WIND STRENGTH
-            // =====================================================
-
-            /*
-             * Noch genau EIN Schritt manuell.
-             *
-             * Die Richtung wird bereits erkannt.
-             * Die 50 wird nach unserem nächsten
-             * Schritt durch automatische
-             * Ziffernerkennung ersetzt.
-             */
-            double windStrength = 50.0;
-
 
             // =====================================================
             // SCREEN CAPTURE
@@ -59,16 +44,13 @@ public class ShellShockAssistant {
                             1080
                     );
 
-
             ScreenCapture screenCapture =
                     new ScreenCapture(
                             region
                     );
 
-
             BufferedImage screenshot =
                     screenCapture.capture();
-
 
             ImageUtils.saveImage(
                     screenshot,
@@ -83,22 +65,15 @@ public class ShellShockAssistant {
             WindDetector windDetector =
                     new WindDetector();
 
-
-            WindDirection windDirection =
-                    windDetector.detectDirection(
+            WindResult windResult =
+                    windDetector.detect(
                             screenshot
                     );
-
-
-            // =====================================================
-            // WIND DEBUG IMAGE
-            // =====================================================
 
             BufferedImage windDebug =
                     windDetector.createDebugImage(
                             screenshot
                     );
-
 
             ImageUtils.saveImage(
                     windDebug,
@@ -106,56 +81,54 @@ public class ShellShockAssistant {
             );
 
 
-            // =====================================================
-            // SIGNED WIND VALUE
-            // =====================================================
-
             double wind;
 
-
-            if (windDirection
-                    ==
-                WindDirection.LEFT) {
+            if (windResult.isValid()) {
 
                 wind =
-                        -Math.abs(
-                                windStrength
-                        );
-
-            } else if (windDirection
-                    ==
-                       WindDirection.RIGHT) {
-
-                wind =
-                        Math.abs(
-                                windStrength
-                        );
+                        windResult.getSignedWind();
 
             } else {
 
                 /*
-                 * Falls die Richtung nicht sicher
-                 * erkannt wird, rechnen wir lieber
-                 * ohne Wind als mit falschem Wind.
+                 * Niemals mit einem geratenen Windwert
+                 * rechnen.
                  */
                 wind = 0.0;
             }
 
 
+            System.out.println();
+
             System.out.println(
-                    "Wind direction: "
-                    + windDirection
+                    "=============================="
             );
 
-
             System.out.println(
-                    "Temporary wind strength: "
-                    + windStrength
+                    "WIND"
             );
 
+            System.out.println(
+                    "=============================="
+            );
 
             System.out.println(
-                    "Wind used by physics: "
+                    "Direction: "
+                    + windResult.getDirection()
+            );
+
+            System.out.println(
+                    "Strength: "
+                    + windResult.getStrength()
+            );
+
+            System.out.println(
+                    "Valid: "
+                    + windResult.isValid()
+            );
+
+            System.out.println(
+                    "Physics Wind: "
                     + wind
             );
 
@@ -167,19 +140,16 @@ public class ShellShockAssistant {
             BlobDetector blobDetector =
                     new BlobDetector();
 
-
             List<Blob> blobs =
                     blobDetector.detectBlobs(
                             screenshot
                     );
-
 
             BufferedImage blobDebug =
                     ImageUtils.drawBlobMarkers(
                             screenshot,
                             blobs
                     );
-
 
             ImageUtils.saveImage(
                     blobDebug,
@@ -194,19 +164,16 @@ public class ShellShockAssistant {
             PlayerDetector playerDetector =
                     new PlayerDetector();
 
-
             List<PlayerState> players =
                     playerDetector.detectPlayers(
                             screenshot
                     );
-
 
             BufferedImage playerDebug =
                     ImageUtils.drawPlayerMarkers(
                             screenshot,
                             players
                     );
-
 
             ImageUtils.saveImage(
                     playerDebug,
@@ -221,19 +188,16 @@ public class ShellShockAssistant {
             TerrainDetector terrainDetector =
                     new TerrainDetector();
 
-
             TerrainProfile terrain =
                     terrainDetector.detectTerrain(
                             screenshot
                     );
-
 
             BufferedImage terrainDebug =
                     ImageUtils.drawTerrain(
                             screenshot,
                             terrain
                     );
-
 
             ImageUtils.saveImage(
                     terrainDebug,
@@ -247,19 +211,19 @@ public class ShellShockAssistant {
 
             PlayerState self = null;
 
-
-            for (PlayerState player : players) {
+            for (PlayerState player :
+                    players) {
 
                 if (player.getType()
                         ==
                     PlayerState.PlayerType.SELF) {
 
-                    self = player;
+                    self =
+                            player;
 
                     break;
                 }
             }
-
 
             if (self == null) {
 
@@ -278,12 +242,10 @@ public class ShellShockAssistant {
             PhysicsModel physicsModel =
                     new PhysicsModel();
 
-
             TrajectoryCalculator calculator =
                     new TrajectoryCalculator(
                             physicsModel
                     );
-
 
             ShotOptimizer optimizer =
                     new ShotOptimizer(
@@ -295,10 +257,11 @@ public class ShellShockAssistant {
             // FIND BEST SHOT FOR EVERY ENEMY
             // =====================================================
 
-            ShotResult overallBest = null;
+            ShotResult overallBest =
+                    null;
 
-
-            for (PlayerState player : players) {
+            for (PlayerState player :
+                    players) {
 
                 if (player.getType()
                         !=
@@ -306,7 +269,6 @@ public class ShellShockAssistant {
 
                     continue;
                 }
-
 
                 ShotResult result =
                         optimizer.findBestShot(
@@ -316,19 +278,16 @@ public class ShellShockAssistant {
                                 wind
                         );
 
-
                 if (result == null) {
 
                     continue;
                 }
-
 
                 System.out.println();
 
                 System.out.println(
                         "===== TARGET ====="
                 );
-
 
                 System.out.println(
                         "Target: "
@@ -337,7 +296,6 @@ public class ShellShockAssistant {
                         + player.getY()
                 );
 
-
                 System.out.println(
                         "Power: "
                         + result
@@ -345,14 +303,12 @@ public class ShellShockAssistant {
                                 .getPower()
                 );
 
-
                 System.out.println(
                         "Angle: "
                         + result
                                 .getShot()
                                 .getAngle()
                 );
-
 
                 System.out.printf(
                         "Miss Distance: %.2f px%n",
@@ -381,7 +337,6 @@ public class ShellShockAssistant {
                 Shot bestShot =
                         overallBest.getShot();
 
-
                 List<TrajectoryPoint> bestTrajectory =
                         calculator.calculate(
                                 self,
@@ -390,13 +345,11 @@ public class ShellShockAssistant {
                                 wind
                         );
 
-
                 BufferedImage trajectoryDebug =
                         ImageUtils.drawTrajectory(
                                 screenshot,
                                 bestTrajectory
                         );
-
 
                 ImageUtils.saveImage(
                         trajectoryDebug,
@@ -414,40 +367,28 @@ public class ShellShockAssistant {
                         "=============================="
                 );
 
-
                 System.out.println(
                         "BEST SHOT"
                 );
 
-
                 System.out.println(
                         "=============================="
                 );
-
-
-                System.out.println(
-                        "Wind direction: "
-                        + windDirection
-                );
-
 
                 System.out.println(
                         "Wind: "
                         + wind
                 );
 
-
                 System.out.println(
                         "Power: "
                         + bestShot.getPower()
                 );
 
-
                 System.out.println(
                         "Angle: "
                         + bestShot.getAngle()
                 );
-
 
                 System.out.println(
                         "Target: "
@@ -460,13 +401,11 @@ public class ShellShockAssistant {
                                 .getY()
                 );
 
-
                 System.out.printf(
                         "Miss Distance: %.2f px%n",
                         overallBest
                                 .getClosestDistance()
                 );
-
 
             } else {
 
@@ -477,7 +416,7 @@ public class ShellShockAssistant {
 
 
             // =====================================================
-            // DEBUG OUTPUT
+            // GENERAL DEBUG
             // =====================================================
 
             System.out.println();
@@ -486,30 +425,26 @@ public class ShellShockAssistant {
                     "=============================="
             );
 
-
             System.out.println(
                     "DEBUG"
             );
 
-
             System.out.println(
                     "=============================="
             );
-
 
             System.out.println(
                     "Blobs gefunden: "
                     + blobs.size()
             );
 
-
             System.out.println(
                     "Players gefunden: "
                     + players.size()
             );
 
-
-            for (PlayerState player : players) {
+            for (PlayerState player :
+                    players) {
 
                 System.out.println(
                         player.getType()
@@ -520,15 +455,8 @@ public class ShellShockAssistant {
                 );
             }
 
-
             System.out.println(
                     "Terrain erfolgreich analysiert."
-            );
-
-
-            System.out.println(
-                    "Wind-Debug gespeichert unter "
-                    + "data/screenshots/wind_debug.png"
             );
 
 
