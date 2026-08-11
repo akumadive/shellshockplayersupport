@@ -33,14 +33,16 @@ public class ShellShockAssistant {
         try {
 
             // =====================================================
-            // TEMP WIND VALUE
+            // TEMPORARY WIND STRENGTH
             // =====================================================
 
             /*
-             * Nur noch vorübergehend.
+             * Noch genau EIN Schritt manuell.
              *
-             * Die Richtung erkennen wir ab jetzt automatisch.
-             * Als Nächstes automatisieren wir auch die Zahl.
+             * Die Richtung wird bereits erkannt.
+             * Die 50 wird nach unserem nächsten
+             * Schritt durch automatische
+             * Ziffernerkennung ersetzt.
              */
             double windStrength = 50.0;
 
@@ -59,7 +61,9 @@ public class ShellShockAssistant {
 
 
             ScreenCapture screenCapture =
-                    new ScreenCapture(region);
+                    new ScreenCapture(
+                            region
+                    );
 
 
             BufferedImage screenshot =
@@ -73,7 +77,7 @@ public class ShellShockAssistant {
 
 
             // =====================================================
-            // WIND DIRECTION
+            // WIND DETECTION
             // =====================================================
 
             WindDetector windDetector =
@@ -85,6 +89,26 @@ public class ShellShockAssistant {
                             screenshot
                     );
 
+
+            // =====================================================
+            // WIND DEBUG IMAGE
+            // =====================================================
+
+            BufferedImage windDebug =
+                    windDetector.createDebugImage(
+                            screenshot
+                    );
+
+
+            ImageUtils.saveImage(
+                    windDebug,
+                    "data/screenshots/wind_debug.png"
+            );
+
+
+            // =====================================================
+            // SIGNED WIND VALUE
+            // =====================================================
 
             double wind;
 
@@ -110,8 +134,9 @@ public class ShellShockAssistant {
             } else {
 
                 /*
-                 * Lieber keinen Wind annehmen,
-                 * als mit falscher Richtung zu rechnen.
+                 * Falls die Richtung nicht sicher
+                 * erkannt wird, rechnen wir lieber
+                 * ohne Wind als mit falschem Wind.
                  */
                 wind = 0.0;
             }
@@ -124,7 +149,13 @@ public class ShellShockAssistant {
 
 
             System.out.println(
-                    "Wind used: "
+                    "Temporary wind strength: "
+                    + windStrength
+            );
+
+
+            System.out.println(
+                    "Wind used by physics: "
                     + wind
             );
 
@@ -383,12 +414,20 @@ public class ShellShockAssistant {
                         "=============================="
                 );
 
+
                 System.out.println(
                         "BEST SHOT"
                 );
 
+
                 System.out.println(
                         "=============================="
+                );
+
+
+                System.out.println(
+                        "Wind direction: "
+                        + windDirection
                 );
 
 
@@ -438,7 +477,7 @@ public class ShellShockAssistant {
 
 
             // =====================================================
-            // DEBUG
+            // DEBUG OUTPUT
             // =====================================================
 
             System.out.println();
@@ -447,9 +486,11 @@ public class ShellShockAssistant {
                     "=============================="
             );
 
+
             System.out.println(
                     "DEBUG"
             );
+
 
             System.out.println(
                     "=============================="
@@ -482,6 +523,12 @@ public class ShellShockAssistant {
 
             System.out.println(
                     "Terrain erfolgreich analysiert."
+            );
+
+
+            System.out.println(
+                    "Wind-Debug gespeichert unter "
+                    + "data/screenshots/wind_debug.png"
             );
 
 
