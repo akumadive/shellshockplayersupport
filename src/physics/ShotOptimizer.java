@@ -1,12 +1,15 @@
 package physics;
 
+import model.Bumper;
 import model.PlayerState;
 import model.Shot;
 import model.ShotResult;
 import model.TerrainProfile;
 import model.TrajectoryPoint;
 
+import java.util.Collections;
 import java.util.List;
+
 
 public class ShotOptimizer {
 
@@ -22,10 +25,10 @@ public class ShotOptimizer {
     }
 
 
-    /*
-     * Alte Version bleibt bestehen.
-     * Ohne angegebenen Wind -> Wind 0.
-     */
+    // =========================================================
+    // OLD API
+    // =========================================================
+
     public ShotResult findBestShot(
             PlayerState shooter,
             PlayerState target,
@@ -36,14 +39,11 @@ public class ShotOptimizer {
                 shooter,
                 target,
                 terrain,
-                0.0
+                0.0,
+                Collections.emptyList()
         );
     }
 
-
-    // =========================================================
-    // OPTIMIZER WITH WIND
-    // =========================================================
 
     public ShotResult findBestShot(
             PlayerState shooter,
@@ -52,30 +52,101 @@ public class ShotOptimizer {
             double wind
     ) {
 
-        ShotResult bestResult = null;
+        return findBestShot(
+                shooter,
+                target,
+                terrain,
+                wind,
+                Collections.emptyList()
+        );
+    }
 
+
+    // =========================================================
+    // OPTIMIZER WITH BUMPERS
+    // =========================================================
+
+    public ShotResult findBestShot(
+            PlayerState shooter,
+            PlayerState target,
+            TerrainProfile terrain,
+            double wind,
+            List<Bumper> bumpers
+    ) {
+
+        if (bumpers == null) {
+
+            bumpers =
+                    Collections.emptyList();
+        }
+
+
+        ShotResult bestResult =
+                null;
+
+
+        // =====================================================
+        // ANGLE RANGE
+        // =====================================================
 
         int minAngle;
         int maxAngle;
 
 
-        if (target.getX()
-                >=
-            shooter.getX()) {
+        if (!bumpers.isEmpty()) {
 
-            minAngle = 1;
-            maxAngle = 89;
+
+            /*
+             * Mit Bumpern kann ein gültiger Shot auch
+             * zuerst vom Gegner weg fliegen.
+             */
+            minAngle =
+                    1;
+
+            maxAngle =
+                    179;
+
 
         } else {
 
-            minAngle = 91;
-            maxAngle = 179;
+
+            /*
+             * Ohne Bumper behalten wir die bisherige
+             * schnelle Suchlogik.
+             */
+
+            if (target.getX()
+                    >=
+                shooter.getX()) {
+
+
+                minAngle =
+                        1;
+
+                maxAngle =
+                        89;
+
+
+            } else {
+
+
+                minAngle =
+                        91;
+
+                maxAngle =
+                        179;
+            }
         }
 
+
+        // =====================================================
+        // SEARCH
+        // =====================================================
 
         for (int power = 1;
              power <= 100;
              power++) {
+
 
             for (int angle = minAngle;
                  angle <= maxAngle;
@@ -94,7 +165,8 @@ public class ShotOptimizer {
                                 shooter,
                                 shot,
                                 terrain,
-                                wind
+                                wind,
+                                bumpers
                         );
 
 
@@ -111,13 +183,17 @@ public class ShotOptimizer {
                     <
                     bestResult.getClosestDistance()) {
 
-                    bestResult = result;
+
+                    bestResult =
+                            result;
                 }
 
 
                 if (bestResult != null &&
                     bestResult.getClosestDistance()
-                    <= 2.0) {
+                    <=
+                    2.0) {
+
 
                     return bestResult;
                 }
@@ -142,8 +218,12 @@ public class ShotOptimizer {
         double bestDistance =
                 Double.MAX_VALUE;
 
-        double bestX = 0;
-        double bestY = 0;
+
+        double bestX =
+                0.0;
+
+        double bestY =
+                0.0;
 
 
         for (TrajectoryPoint point :
@@ -154,6 +234,7 @@ public class ShotOptimizer {
                     point.getX()
                     -
                     target.getX();
+
 
             double dy =
                     point.getY()
@@ -173,11 +254,14 @@ public class ShotOptimizer {
                     <
                 bestDistance) {
 
+
                 bestDistance =
                         distance;
 
+
                 bestX =
                         point.getX();
+
 
                 bestY =
                         point.getY();

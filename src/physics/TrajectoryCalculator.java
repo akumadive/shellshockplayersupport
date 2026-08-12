@@ -1,59 +1,94 @@
 package physics;
 
+import model.Bumper;
 import model.PlayerState;
 import model.Shot;
 import model.TerrainProfile;
 import model.TrajectoryPoint;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+
 
 public class TrajectoryCalculator {
 
     private final PhysicsModel physicsModel;
 
-    /*
-     * Radius um SELF, in dem Terrain-Kollisionen
-     * ignoriert werden.
-     *
-     * Grund:
-     * Der erkannte Spielerpunkt liegt sehr nah
-     * an der Terrain-Oberfläche.
-     *
-     * Wir ignorieren deshalb NICHT mehr pauschal
-     * die ersten 20 Simulationsschritte, sondern
-     * nur einen kleinen Bereich direkt um SELF.
-     */
-    private static final double SHOOTER_IGNORE_RADIUS = 14.0;
+
+    // =========================================================
+    // GENERAL PHYSICS
+    // =========================================================
+
+    private static final double TIME_STEP =
+            0.05;
+
+    private static final int MAX_STEPS =
+            10000;
+
+    private static final double MAX_SCREEN_Y =
+            1200.0;
+
+
+    // =========================================================
+    // TERRAIN
+    // =========================================================
+
+    private static final double SHOOTER_IGNORE_RADIUS =
+            14.0;
+
+    private static final double COLLISION_SAMPLE_DISTANCE =
+            0.5;
+
+
+    // =========================================================
+    // BUMPER
+    // =========================================================
 
     /*
-     * Maximale Distanz zwischen zwei Prüf-Punkten
-     * bei der Terrain-Kollision.
+     * Effektive Kollisionsdicke eines Line-Bumpers.
      *
-     * Dadurch können dünne Spitzen und steile
-     * Terrain-Kanten nicht einfach zwischen
-     * zwei Physics-Steps übersprungen werden.
+     * Der Detector liefert die Mittellinie.
+     * Das echte Objekt besitzt aber eine sichtbare Dicke.
      */
-    private static final double COLLISION_SAMPLE_DISTANCE = 0.5;
+    private static final double LINE_BUMPER_RADIUS =
+            5.0;
+
 
     /*
-     * Unterhalb dieses Bildschirmbereichs
-     * brauchen wir nicht weiter zu simulieren.
+     * Circle Detector liefert bereits den ungefähren Radius.
+     * Kleine zusätzliche Toleranz verhindert, dass ein
+     * Projektil knapp durch Anti-Aliasing hindurchläuft.
      */
-    private static final double MAX_SCREEN_Y = 1200.0;
+    private static final double CIRCLE_BUMPER_EXTRA_RADIUS =
+            2.0;
+
 
     /*
-     * Schutz gegen Endlossimulationen.
-     */
-    private static final int MAX_STEPS = 10000;
-
-    /*
-     * Bestehende Physics-Auflösung.
+     * Nach einem Bounce wird das Projektil minimal von der
+     * Oberfläche weggeschoben.
      *
-     * Die funktionierende Flugphysik wird
-     * hier NICHT verändert.
+     * Sonst könnte es im nächsten Physics-Step denselben
+     * Bumper sofort noch einmal treffen.
      */
-    private static final double TIME_STEP = 0.05;
+    private static final double BUMPER_PUSH_OUT =
+            1.5;
+
+
+    /*
+     * Derselbe Bumper wird für einige Schritte ignoriert,
+     * nachdem wir ihn getroffen haben.
+     */
+    private static final int BUMPER_COOLDOWN_STEPS =
+            4;
+
+
+    /*
+     * Schutz vor absurden Endlosschleifen zwischen
+     * mehreren Bumpern.
+     */
+    private static final int MAX_BOUNCES =
+            20;
 
 
     public TrajectoryCalculator(
@@ -65,16 +100,10 @@ public class TrajectoryCalculator {
     }
 
 
-    /*
-     * Alte Methode bleibt erhalten.
-     *
-     * Dadurch funktioniert sämtlicher bisheriger
-     * Code weiterhin exakt wie vorher:
-     *
-     * calculate(shooter, shot, terrain)
-     *
-     * bedeutet automatisch Wind = 0.
-     */
+    // =========================================================
+    // OLD API
+    // =========================================================
+
     public List<TrajectoryPoint> calculate(
             PlayerState shooter,
             Shot shot,
@@ -85,14 +114,11 @@ public class TrajectoryCalculator {
                 shooter,
                 shot,
                 terrain,
-                0.0
+                0.0,
+                Collections.emptyList()
         );
     }
 
-
-    // =========================================================
-    // CALCULATE WITH WIND
-    // =========================================================
 
     public List<TrajectoryPoint> calculate(
             PlayerState shooter,
@@ -101,8 +127,37 @@ public class TrajectoryCalculator {
             double wind
     ) {
 
+        return calculate(
+                shooter,
+                shot,
+                terrain,
+                wind,
+                Collections.emptyList()
+        );
+    }
+
+
+    // =========================================================
+    // CALCULATE WITH BUMPERS
+    // =========================================================
+
+    public List<TrajectoryPoint> calculate(
+            PlayerState shooter,
+            Shot shot,
+            TerrainProfile terrain,
+            double wind,
+            List<Bumper> bumpers
+    ) {
+
         List<TrajectoryPoint> points =
                 new ArrayList<>();
+
+
+        if (bumpers == null) {
+
+            bumpers =
+                    Collections.emptyList();
+        }
 
 
         // =====================================================
@@ -114,18 +169,25 @@ public class TrajectoryCalculator {
                         shot.getAngle()
                 );
 
+
         double velocity =
                 shot.getPower()
                 *
                 physicsModel.getPowerScale();
 
+
         double vx =
-                Math.cos(angleRadians)
+                Math.cos(
+                        angleRadians
+                )
                 *
                 velocity;
 
+
         double vy =
-                -Math.sin(angleRadians)
+                -Math.sin(
+                        angleRadians
+                )
                 *
                 velocity;
 
@@ -152,19 +214,32 @@ public class TrajectoryCalculator {
 
 
         // =====================================================
+        // BUMPER STATE
+        // =====================================================
+
+        Bumper lastHitBumper =
+                null;
+
+        int bumperCooldown =
+                0;
+
+        int bounceCount =
+                0;
+
+
+        // =====================================================
         // SIMULATION
         // =====================================================
 
-        double time = 0.0;
+        double time =
+                0.0;
+
 
         for (int i = 0;
              i < MAX_STEPS;
              i++) {
 
 
-            /*
-             * Aktuelle Position speichern.
-             */
             points.add(
                     new TrajectoryPoint(
                             x,
@@ -183,10 +258,12 @@ public class TrajectoryCalculator {
                     +
                     vx * TIME_STEP;
 
+
             double nextY =
                     y
                     +
                     vy * TIME_STEP;
+
 
             double nextTime =
                     time
@@ -195,28 +272,11 @@ public class TrajectoryCalculator {
 
 
             // =================================================
-            // TERRAIN COLLISION
+            // BUMPER COLLISION
             // =================================================
 
-            /*
-             * Wichtig:
-             *
-             * Wir prüfen NICHT nur nextX/nextY.
-             *
-             * Stattdessen prüfen wir die komplette Strecke
-             * vom aktuellen Punkt zum nächsten Punkt.
-             *
-             * Dadurch werden auch:
-             *
-             * - dünne Spitzen
-             * - kleine Hügel
-             * - steile Wände
-             * - schnelle Projektile
-             *
-             * zuverlässig erkannt.
-             */
-            TerrainCollision collision =
-                    findTerrainCollision(
+            BumperCollision bumperCollision =
+                    findBumperCollision(
                             x,
                             y,
                             time,
@@ -225,40 +285,193 @@ public class TrajectoryCalculator {
                             nextY,
                             nextTime,
 
-                            shooter,
-                            terrain
+                            bumpers,
+
+                            bumperCooldown > 0
+                                    ?
+                                    lastHitBumper
+                                    :
+                                    null
                     );
 
 
-            if (collision != null) {
+            if (bumperCollision != null) {
 
-                /*
-                 * Exakten Kollisionspunkt noch
-                 * in die Trajectory aufnehmen.
-                 */
+
+                // =============================================
+                // MOVE TO COLLISION
+                // =============================================
+
+                x =
+                        bumperCollision.x;
+
+                y =
+                        bumperCollision.y;
+
+                time =
+                        bumperCollision.time;
+
+
                 points.add(
                         new TrajectoryPoint(
-                                collision.x,
-                                collision.y,
-                                collision.time
+                                x,
+                                y,
+                                time
                         )
                 );
 
+
+                // =============================================
+                // REFLECT VELOCITY
+                // =============================================
+
                 /*
-                 * Projektil ist im Terrain:
-                 * Simulation beendet.
+                 * Reflection:
+                 *
+                 * v' = v - 2(v dot n)n
                  */
-                break;
+
+                double dot =
+                        vx
+                        *
+                        bumperCollision.normalX
+                        +
+                        vy
+                        *
+                        bumperCollision.normalY;
+
+
+                vx =
+                        vx
+                        -
+                        2.0
+                        *
+                        dot
+                        *
+                        bumperCollision.normalX;
+
+
+                vy =
+                        vy
+                        -
+                        2.0
+                        *
+                        dot
+                        *
+                        bumperCollision.normalY;
+
+
+                // =============================================
+                // PUSH PROJECTILE AWAY
+                // =============================================
+
+                x +=
+                        bumperCollision.normalX
+                        *
+                        BUMPER_PUSH_OUT;
+
+
+                y +=
+                        bumperCollision.normalY
+                        *
+                        BUMPER_PUSH_OUT;
+
+
+                lastHitBumper =
+                        bumperCollision.bumper;
+
+
+                bumperCooldown =
+                        BUMPER_COOLDOWN_STEPS;
+
+
+                bounceCount++;
+
+
+                if (bounceCount
+                        >
+                    MAX_BOUNCES) {
+
+                    break;
+                }
+
+
+                /*
+                 * Nach dem Bounce beginnt der nächste
+                 * Physics-Step von der Kollisionsstelle.
+                 *
+                 * Gravity/Wind werden unten weiterhin
+                 * normal angewendet.
+                 */
+
+            } else {
+
+
+                // =============================================
+                // TERRAIN COLLISION
+                // =============================================
+
+                TerrainCollision terrainCollision =
+                        findTerrainCollision(
+                                x,
+                                y,
+                                time,
+
+                                nextX,
+                                nextY,
+                                nextTime,
+
+                                shooter,
+                                terrain
+                        );
+
+
+                if (terrainCollision != null) {
+
+
+                    points.add(
+                            new TrajectoryPoint(
+                                    terrainCollision.x,
+                                    terrainCollision.y,
+                                    terrainCollision.time
+                            )
+                    );
+
+
+                    break;
+                }
+
+
+                // =============================================
+                // APPLY POSITION
+                // =============================================
+
+                x =
+                        nextX;
+
+                y =
+                        nextY;
+
+                time =
+                        nextTime;
             }
 
 
             // =================================================
-            // APPLY POSITION
+            // BUMPER COOLDOWN
             // =================================================
 
-            x = nextX;
-            y = nextY;
-            time = nextTime;
+            if (bumperCooldown > 0) {
+
+                bumperCooldown--;
+
+
+                if (bumperCooldown == 0) {
+
+                    lastHitBumper =
+                            null;
+                }
+            }
 
 
             // =================================================
@@ -282,24 +495,12 @@ public class TrajectoryCalculator {
             // ACCELERATION
             // =================================================
 
-            /*
-             * Positive Windwerte:
-             * Wind nach rechts.
-             *
-             * Negative Windwerte:
-             * Wind nach links.
-             */
             vx +=
                     windAcceleration
                     *
                     TIME_STEP;
 
 
-            /*
-             * Bildschirmkoordinaten:
-             *
-             * +Y = nach unten.
-             */
             vy +=
                     physicsModel.getGravity()
                     *
@@ -308,6 +509,444 @@ public class TrajectoryCalculator {
 
 
         return points;
+    }
+
+
+    // =========================================================
+    // BUMPER COLLISION
+    // =========================================================
+
+    private BumperCollision findBumperCollision(
+            double startX,
+            double startY,
+            double startTime,
+
+            double endX,
+            double endY,
+            double endTime,
+
+            List<Bumper> bumpers,
+
+            Bumper ignoredBumper
+    ) {
+
+        if (bumpers == null ||
+            bumpers.isEmpty()) {
+
+            return null;
+        }
+
+
+        double dx =
+                endX
+                -
+                startX;
+
+
+        double dy =
+                endY
+                -
+                startY;
+
+
+        double segmentLength =
+                Math.sqrt(
+                        dx * dx
+                        +
+                        dy * dy
+                );
+
+
+        int samples =
+                Math.max(
+                        1,
+                        (int) Math.ceil(
+                                segmentLength
+                                /
+                                COLLISION_SAMPLE_DISTANCE
+                        )
+                );
+
+
+        for (int sample = 1;
+             sample <= samples;
+             sample++) {
+
+
+            double progress =
+                    (double) sample
+                    /
+                    samples;
+
+
+            double sampleX =
+                    startX
+                    +
+                    dx
+                    *
+                    progress;
+
+
+            double sampleY =
+                    startY
+                    +
+                    dy
+                    *
+                    progress;
+
+
+            double sampleTime =
+                    startTime
+                    +
+                    (
+                            endTime
+                            -
+                            startTime
+                    )
+                    *
+                    progress;
+
+
+            for (Bumper bumper :
+                    bumpers) {
+
+
+                if (bumper
+                        ==
+                    ignoredBumper) {
+
+                    continue;
+                }
+
+
+                BumperCollision collision;
+
+
+                if (bumper.getType()
+                        ==
+                    Bumper.BumperType.LINE) {
+
+
+                    collision =
+                            checkLineBumper(
+                                    sampleX,
+                                    sampleY,
+                                    sampleTime,
+                                    bumper
+                            );
+
+
+                } else {
+
+
+                    collision =
+                            checkCircleBumper(
+                                    sampleX,
+                                    sampleY,
+                                    sampleTime,
+                                    bumper
+                            );
+                }
+
+
+                if (collision != null) {
+
+                    return collision;
+                }
+            }
+        }
+
+
+        return null;
+    }
+
+
+    // =========================================================
+    // LINE BUMPER
+    // =========================================================
+
+    private BumperCollision checkLineBumper(
+            double x,
+            double y,
+            double time,
+            Bumper bumper
+    ) {
+
+        double ax =
+                bumper.getStartX();
+
+        double ay =
+                bumper.getStartY();
+
+
+        double bx =
+                bumper.getEndX();
+
+        double by =
+                bumper.getEndY();
+
+
+        double lineX =
+                bx
+                -
+                ax;
+
+
+        double lineY =
+                by
+                -
+                ay;
+
+
+        double lengthSquared =
+                lineX * lineX
+                +
+                lineY * lineY;
+
+
+        if (lengthSquared
+                <
+            0.000001) {
+
+            return null;
+        }
+
+
+        // =====================================================
+        // CLOSEST POINT ON LINE SEGMENT
+        // =====================================================
+
+        double projection =
+                (
+                        (x - ax) * lineX
+                        +
+                        (y - ay) * lineY
+                )
+                /
+                lengthSquared;
+
+
+        projection =
+                Math.max(
+                        0.0,
+                        Math.min(
+                                1.0,
+                                projection
+                        )
+                );
+
+
+        double closestX =
+                ax
+                +
+                lineX
+                *
+                projection;
+
+
+        double closestY =
+                ay
+                +
+                lineY
+                *
+                projection;
+
+
+        double diffX =
+                x
+                -
+                closestX;
+
+
+        double diffY =
+                y
+                -
+                closestY;
+
+
+        double distanceSquared =
+                diffX * diffX
+                +
+                diffY * diffY;
+
+
+        if (distanceSquared
+                >
+            LINE_BUMPER_RADIUS
+            *
+            LINE_BUMPER_RADIUS) {
+
+            return null;
+        }
+
+
+        // =====================================================
+        // NORMAL
+        // =====================================================
+
+        double normalX;
+
+        double normalY;
+
+
+        double distance =
+                Math.sqrt(
+                        distanceSquared
+                );
+
+
+        if (distance
+                >
+            0.000001) {
+
+
+            /*
+             * Normal vom Bumper zum Projektil.
+             */
+            normalX =
+                    diffX
+                    /
+                    distance;
+
+
+            normalY =
+                    diffY
+                    /
+                    distance;
+
+
+        } else {
+
+
+            /*
+             * Projektil liegt exakt auf der Mittellinie.
+             *
+             * Dann normale Senkrechte zur Bumper-Achse.
+             */
+            double lineLength =
+                    Math.sqrt(
+                            lengthSquared
+                    );
+
+
+            normalX =
+                    -lineY
+                    /
+                    lineLength;
+
+
+            normalY =
+                    lineX
+                    /
+                    lineLength;
+        }
+
+
+        return new BumperCollision(
+                bumper,
+
+                x,
+                y,
+                time,
+
+                normalX,
+                normalY
+        );
+    }
+
+
+    // =========================================================
+    // CIRCLE BUMPER
+    // =========================================================
+
+    private BumperCollision checkCircleBumper(
+            double x,
+            double y,
+            double time,
+            Bumper bumper
+    ) {
+
+        double radius =
+                bumper.getRadius()
+                +
+                CIRCLE_BUMPER_EXTRA_RADIUS;
+
+
+        double dx =
+                x
+                -
+                bumper.getCenterX();
+
+
+        double dy =
+                y
+                -
+                bumper.getCenterY();
+
+
+        double distanceSquared =
+                dx * dx
+                +
+                dy * dy;
+
+
+        if (distanceSquared
+                >
+            radius * radius) {
+
+            return null;
+        }
+
+
+        double distance =
+                Math.sqrt(
+                        distanceSquared
+                );
+
+
+        double normalX;
+
+        double normalY;
+
+
+        if (distance
+                >
+            0.000001) {
+
+
+            normalX =
+                    dx
+                    /
+                    distance;
+
+
+            normalY =
+                    dy
+                    /
+                    distance;
+
+
+        } else {
+
+
+            normalX =
+                    0.0;
+
+            normalY =
+                    -1.0;
+        }
+
+
+        return new BumperCollision(
+                bumper,
+
+                x,
+                y,
+                time,
+
+                normalX,
+                normalY
+        );
     }
 
 
@@ -333,6 +972,7 @@ public class TrajectoryCalculator {
                 -
                 startX;
 
+
         double dy =
                 endY
                 -
@@ -347,12 +987,6 @@ public class TrajectoryCalculator {
                 );
 
 
-        /*
-         * Mindestens einen Sample durchführen.
-         *
-         * Bei längeren Bewegungen entstehen
-         * entsprechend mehr Zwischenprüfungen.
-         */
         int samples =
                 Math.max(
                         1,
@@ -380,10 +1014,12 @@ public class TrajectoryCalculator {
                     +
                     dx * progress;
 
+
             double sampleY =
                     startY
                     +
                     dy * progress;
+
 
             double sampleTime =
                     startTime
@@ -397,10 +1033,6 @@ public class TrajectoryCalculator {
                     progress;
 
 
-            /*
-             * Außerhalb der horizontalen Map:
-             * dort kann kein Terrain mehr geprüft werden.
-             */
             if (sampleX < 0 ||
                 sampleX >= terrain.getWidth()) {
 
@@ -408,16 +1040,6 @@ public class TrajectoryCalculator {
             }
 
 
-            /*
-             * Direkt um SELF herum ignorieren wir
-             * Terrain.
-             *
-             * Anders als vorher sind das aber NICHT
-             * pauschal 20 komplette Physics-Steps.
-             *
-             * Dadurch kann ein naher Berg unmittelbar
-             * vor dem Panzer jetzt korrekt blockieren.
-             */
             if (isInsideShooterIgnoreArea(
                     sampleX,
                     sampleY,
@@ -433,6 +1055,7 @@ public class TrajectoryCalculator {
                     sampleY,
                     terrain
             )) {
+
 
                 return new TerrainCollision(
                         sampleX,
@@ -462,6 +1085,7 @@ public class TrajectoryCalculator {
                 -
                 shooter.getX();
 
+
         double dy =
                 y
                 -
@@ -483,7 +1107,7 @@ public class TrajectoryCalculator {
 
 
     // =========================================================
-    // SINGLE TERRAIN TEST
+    // TERRAIN TEST
     // =========================================================
 
     private boolean hitsTerrain(
@@ -492,14 +1116,10 @@ public class TrajectoryCalculator {
             TerrainProfile terrain
     ) {
 
-        /*
-         * Nicht round(), sondern floor().
-         *
-         * x = 100.9 befindet sich noch in
-         * Terrain-Spalte 100.
-         */
         int terrainX =
-                (int) Math.floor(x);
+                (int) Math.floor(
+                        x
+                );
 
 
         if (terrainX < 0 ||
@@ -523,17 +1143,57 @@ public class TrajectoryCalculator {
                 );
 
 
-        /*
-         * Bildschirm:
-         *
-         * kleinere Y = weiter oben
-         * größere Y = weiter unten
-         *
-         * Sobald das Projektil auf oder unterhalb
-         * der Terrain-Oberfläche liegt, ist es
-         * kollidiert.
-         */
-        return y >= terrainY;
+        return y
+                >=
+                terrainY;
+    }
+
+
+    // =========================================================
+    // INTERNAL BUMPER COLLISION
+    // =========================================================
+
+    private static class BumperCollision {
+
+        private final Bumper bumper;
+
+        private final double x;
+        private final double y;
+        private final double time;
+
+        private final double normalX;
+        private final double normalY;
+
+
+        private BumperCollision(
+                Bumper bumper,
+
+                double x,
+                double y,
+                double time,
+
+                double normalX,
+                double normalY
+        ) {
+
+            this.bumper =
+                    bumper;
+
+            this.x =
+                    x;
+
+            this.y =
+                    y;
+
+            this.time =
+                    time;
+
+            this.normalX =
+                    normalX;
+
+            this.normalY =
+                    normalY;
+        }
     }
 
 
@@ -554,9 +1214,14 @@ public class TrajectoryCalculator {
                 double time
         ) {
 
-            this.x = x;
-            this.y = y;
-            this.time = time;
+            this.x =
+                    x;
+
+            this.y =
+                    y;
+
+            this.time =
+                    time;
         }
     }
 }

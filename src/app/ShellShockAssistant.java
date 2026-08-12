@@ -1,4 +1,9 @@
 package app;
+import model.DamageMultiplier;
+
+import util.DamageMultiplierDebugRenderer;
+
+import vision.DamageMultiplierDetector;
 
 import capture.CaptureRegion;
 import capture.ScreenCapture;
@@ -35,6 +40,7 @@ public class ShellShockAssistant {
     public static void main(String[] args) {
 
         try {
+
 
             // =====================================================
             // SCREEN CAPTURE
@@ -96,16 +102,16 @@ public class ShellShockAssistant {
 
             if (windResult.isValid()) {
 
+
                 wind =
                         windResult.getSignedWind();
 
+
             } else {
 
-                /*
-                 * Niemals mit einem geratenen Windwert
-                 * rechnen.
-                 */
-                wind = 0.0;
+
+                wind =
+                        0.0;
             }
 
 
@@ -301,6 +307,71 @@ public class ShellShockAssistant {
                 );
             }
 
+            // =====================================================
+// DAMAGE MULTIPLIER DETECTION
+// =====================================================
+
+DamageMultiplierDetector damageMultiplierDetector =
+        new DamageMultiplierDetector();
+
+
+List<DamageMultiplier> damageMultipliers =
+        damageMultiplierDetector.detect(
+                screenshot
+        );
+
+
+DamageMultiplierDebugRenderer damageMultiplierDebugRenderer =
+        new DamageMultiplierDebugRenderer();
+
+
+BufferedImage damageMultiplierDebug =
+        damageMultiplierDebugRenderer.draw(
+                screenshot,
+                damageMultipliers
+        );
+
+
+ImageUtils.saveImage(
+        damageMultiplierDebug,
+        "data/screenshots/damage_multiplier_debug.png"
+);
+
+
+System.out.println();
+
+
+System.out.println(
+        "=============================="
+);
+
+
+System.out.println(
+        "DAMAGE MULTIPLIERS"
+);
+
+
+System.out.println(
+        "=============================="
+);
+
+
+System.out.println(
+        "Gefunden: "
+        +
+        damageMultipliers.size()
+);
+
+
+for (DamageMultiplier multiplier :
+        damageMultipliers) {
+
+
+    System.out.println(
+            multiplier
+    );
+}
+
 
             // =====================================================
             // FIND SELF
@@ -386,12 +457,12 @@ public class ShellShockAssistant {
                                 self,
                                 player,
                                 terrain,
-                                wind
+                                wind,
+                                bumpers
                         );
 
 
                 if (result == null) {
-
 
                     continue;
                 }
@@ -469,7 +540,8 @@ public class ShellShockAssistant {
                                 self,
                                 bestShot,
                                 terrain,
-                                wind
+                                wind,
+                                bumpers
                         );
 
 
