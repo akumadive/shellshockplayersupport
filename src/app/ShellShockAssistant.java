@@ -282,33 +282,6 @@ public class ShellShockAssistant {
             }
 
             // =====================================================
-            // PORTALS
-            // =====================================================
-
-            PortalDetector portalDetector =
-                    new PortalDetector();
-
-            List<PortalPair> portalPairs =
-                    portalDetector.detectPortalPairs(
-                            screenshot
-                    );
-
-            System.out.println();
-            System.out.println("==============================");
-            System.out.println("PORTALS");
-            System.out.println("==============================");
-            System.out.println("Paare gefunden: " + portalPairs.size());
-
-            for (PortalPair pair :
-                    portalPairs) {
-
-                System.out.println();
-                System.out.println("PAIR " + pair.getId());
-                System.out.println("Orange: " + pair.getOrangePortal());
-                System.out.println("Blue:   " + pair.getBluePortal());
-            }
-
-            // =====================================================
             // FIND SELF
             // =====================================================
 

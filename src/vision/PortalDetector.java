@@ -5,68 +5,222 @@ import model.PortalPair;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
-import java.util.ArrayDeque;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Queue;
+
 
 public class PortalDetector {
 
-    private static final double MAX_Y_FACTOR = 0.78;
-
-    private static final int MIN_PIXELS = 35;
-    private static final int MIN_DIAMETER = 35;
-    private static final int MAX_DIAMETER = 150;
-
-    private static final double MIN_ASPECT_RATIO = 0.70;
-    private static final double MAX_ASPECT_RATIO = 1.35;
-
-    private static final double MIN_FILL_RATIO = 0.025;
-    private static final double MAX_FILL_RATIO = 0.60;
+    // =========================================================
+    // SEARCH AREA
+    // =========================================================
 
     /*
-     * Fallback only. Normally the collision radius is now measured from
-     * the DARK INNER OPENING -> colored ring transition.
+     * Unteres HUD ignorieren.
      */
-    private static final double FALLBACK_INNER_RADIUS_FACTOR = 0.80;
+    private static final double MAX_Y_FACTOR =
+            0.78;
 
-    private static final int RADIUS_RAYS = 64;
-    private static final double MIN_VALID_RAY_FACTOR = 0.45;
 
-    public List<PortalPair> detectPortalPairs(BufferedImage image) {
+    /*
+     * Portalradius in deinen bisherigen 1920x1080-Screenshots:
+     *
+     * ungefähr 40 px.
+     *
+     * Etwas Spielraum für Skalierung / Glow.
+     */
+    private static final int MIN_RADIUS =
+            30;
 
-        List<Portal> portals = detectPortals(image);
+    private static final int MAX_RADIUS =
+            55;
 
-        List<Portal> orange = new ArrayList<>();
-        List<Portal> blue = new ArrayList<>();
 
-        for (Portal portal : portals) {
-            if (portal.getColor() == Portal.PortalColor.ORANGE) {
-                orange.add(portal);
+    /*
+     * Nicht jeden einzelnen Pixel als Center testen.
+     *
+     * 3 reicht bei einem ~40px Portal völlig.
+     */
+    private static final int CENTER_STEP =
+            3;
+
+
+    /*
+     * Radius wird ebenfalls nicht in 1px-Schritten getestet.
+     */
+    private static final int RADIUS_STEP =
+            2;
+
+
+    // =========================================================
+    // CENTER DARKNESS
+    // =========================================================
+
+    /*
+     * Portalinnenraum ist fast schwarz.
+     *
+     * Wir prüfen nicht nur einen Pixel, sondern mehrere
+     * Punkte um den Kandidatenmittelpunkt herum.
+     */
+    private static final int DARK_CENTER_MAX_BRIGHTNESS =
+            115;
+
+
+    /*
+     * Mindestens dieser Anteil der geprüften inneren
+     * Punkte muss dunkel sein.
+     */
+    private static final double MIN_DARK_CENTER_RATIO =
+            0.78;
+
+
+    // =========================================================
+    // RING TEST
+    // =========================================================
+
+    /*
+     * Anzahl Winkelproben rund um den Kreis.
+     */
+    private static final int RING_SAMPLES =
+            32;
+
+
+    /*
+     * Mindestanteil der Ringpunkte, die zur Farbe
+     * passen müssen.
+     *
+     * Absichtlich nicht 100 %, weil:
+     *
+     * - Terrain davor liegen kann
+     * - Sparks existieren
+     * - Anti-Aliasing
+     * - sichtbare Nummer im Portal
+     */
+    private static final double MIN_RING_MATCH_RATIO =
+            0.44;
+
+
+    /*
+     * Zusätzlich muss außerhalb des dunklen Innenraums
+     * ein deutlicher Helligkeitsanstieg vorliegen.
+     */
+    private static final double MIN_RING_CONTRAST_RATIO =
+            0.55;
+
+
+    // =========================================================
+    // CANDIDATE SCORE
+    // =========================================================
+
+    /*
+     * Kandidaten unterhalb dieses Scores ignorieren.
+     */
+    private static final double MIN_SCORE =
+            0.52;
+
+
+    /*
+     * Mehrere nahe Center-Kandidaten gehören zum
+     * selben Portal.
+     */
+    private static final double DUPLICATE_DISTANCE =
+            35.0;
+
+
+    // =========================================================
+    // PUBLIC API
+    // =========================================================
+
+    public List<PortalPair> detectPortalPairs(
+            BufferedImage image
+    ) {
+
+        List<Portal> portals =
+                detectPortals(
+                        image
+                );
+
+
+        List<Portal> orange =
+                new ArrayList<>();
+
+
+        List<Portal> blue =
+                new ArrayList<>();
+
+
+        for (Portal portal :
+                portals) {
+
+
+            if (portal.getColor()
+                    ==
+                Portal.PortalColor.ORANGE) {
+
+
+                orange.add(
+                        portal
+                );
+
+
             } else {
-                blue.add(portal);
+
+
+                blue.add(
+                        portal
+                );
             }
         }
 
+
         /*
-         * Current pairing strategy:
-         * same vertical order on both colors.
+         * Aktuelle Pair-Strategie:
          *
-         * This matches the verified practice-range cases:
-         * top orange <-> top blue, bottom orange <-> bottom blue.
+         * gleiche vertikale Reihenfolge.
          *
-         * The visible number recognition can be added later if we find
-         * a layout where the orders differ.
+         * Das entspricht allen bisher gesehenen
+         * Fällen:
+         *
+         * Orange oben <-> Blau oben
+         * Orange unten <-> Blau unten
          */
-        orange.sort(Comparator.comparingDouble(Portal::getCenterY));
-        blue.sort(Comparator.comparingDouble(Portal::getCenterY));
+        orange.sort(
+                Comparator.comparingDouble(
+                        Portal::getCenterY
+                )
+        );
 
-        int pairCount = Math.min(orange.size(), blue.size());
-        List<PortalPair> pairs = new ArrayList<>();
 
-        for (int i = 0; i < pairCount; i++) {
-            int pairId = pairCount - i;
+        blue.sort(
+                Comparator.comparingDouble(
+                        Portal::getCenterY
+                )
+        );
+
+
+        int pairCount =
+                Math.min(
+                        orange.size(),
+                        blue.size()
+                );
+
+
+        List<PortalPair> pairs =
+                new ArrayList<>();
+
+
+        for (int i = 0;
+             i < pairCount;
+             i++) {
+
+
+            int pairId =
+                    pairCount
+                    -
+                    i;
+
 
             pairs.add(
                     new PortalPair(
@@ -77,523 +231,842 @@ public class PortalDetector {
             );
         }
 
+
         return pairs;
     }
 
-    public List<Portal> detectPortals(BufferedImage image) {
 
-        int maxY = (int) Math.round(
-                image.getHeight() * MAX_Y_FACTOR
-        );
-
-        List<Component> orangeComponents =
-                findComponents(image, maxY, true);
-
-        List<Component> blueComponents =
-                findComponents(image, maxY, false);
-
-        List<Portal> portals = new ArrayList<>();
-
-        for (Component component : orangeComponents) {
-            Portal portal = componentToPortal(
-                    image,
-                    component,
-                    Portal.PortalColor.ORANGE
-            );
-
-            if (portal != null) {
-                portals.add(portal);
-            }
-        }
-
-        for (Component component : blueComponents) {
-            Portal portal = componentToPortal(
-                    image,
-                    component,
-                    Portal.PortalColor.BLUE
-            );
-
-            if (portal != null) {
-                portals.add(portal);
-            }
-        }
-
-        return portals;
-    }
-
-    private List<Component> findComponents(
-            BufferedImage image,
-            int maxY,
-            boolean orange
+    public List<Portal> detectPortals(
+            BufferedImage image
     ) {
 
-        int width = image.getWidth();
+        List<PortalCandidate> candidates =
+                findPortalCandidates(
+                        image
+                );
 
-        boolean[][] visited =
-                new boolean[width][maxY];
 
-        List<Component> result =
+        /*
+         * Beste Kandidaten zuerst.
+         */
+        candidates.sort(
+                (
+                        first,
+                        second
+                ) ->
+                        Double.compare(
+                                second.score,
+                                first.score
+                        )
+        );
+
+
+        List<PortalCandidate> accepted =
                 new ArrayList<>();
 
-        for (int y = 0; y < maxY; y++) {
-            for (int x = 0; x < width; x++) {
 
-                if (visited[x][y]) {
-                    continue;
-                }
+        /*
+         * Non-Maximum-Suppression.
+         *
+         * Ein echtes Portal erzeugt wegen CENTER_STEP
+         * viele Kandidaten direkt nebeneinander.
+         */
+        for (PortalCandidate candidate :
+                candidates) {
 
-                visited[x][y] = true;
 
-                if (!isPortalPixel(
-                        image.getRGB(x, y),
-                        orange
-                )) {
-                    continue;
-                }
+            boolean duplicate =
+                    false;
 
-                Component component =
-                        floodFill(
-                                image,
-                                x,
-                                y,
-                                maxY,
-                                visited,
-                                orange
+
+            for (PortalCandidate existing :
+                    accepted) {
+
+
+                double dx =
+                        candidate.centerX
+                        -
+                        existing.centerX;
+
+
+                double dy =
+                        candidate.centerY
+                        -
+                        existing.centerY;
+
+
+                double distance =
+                        Math.sqrt(
+                                dx * dx
+                                +
+                                dy * dy
                         );
 
-                if (component.pixelCount >= MIN_PIXELS) {
-                    result.add(component);
+
+                if (distance
+                        <
+                    DUPLICATE_DISTANCE) {
+
+
+                    duplicate =
+                            true;
+
+
+                    break;
                 }
             }
+
+
+            if (!duplicate) {
+
+
+                accepted.add(
+                        candidate
+                );
+            }
         }
+
+
+        List<Portal> result =
+                new ArrayList<>();
+
+
+        for (PortalCandidate candidate :
+                accepted) {
+
+
+            result.add(
+                    new Portal(
+                            candidate.color,
+                            candidate.centerX,
+                            candidate.centerY,
+                            candidate.radius
+                    )
+            );
+        }
+
 
         return result;
     }
 
-    private Portal componentToPortal(
-            BufferedImage image,
-            Component component,
-            Portal.PortalColor color
+
+    // =========================================================
+    // CANDIDATE SEARCH
+    // =========================================================
+
+    private List<PortalCandidate> findPortalCandidates(
+            BufferedImage image
     ) {
 
-        int width = component.getWidth();
-        int height = component.getHeight();
-
-        if (width < MIN_DIAMETER ||
-            height < MIN_DIAMETER ||
-            width > MAX_DIAMETER ||
-            height > MAX_DIAMETER) {
-
-            return null;
-        }
-
-        double aspectRatio =
-                (double) width / height;
-
-        if (aspectRatio < MIN_ASPECT_RATIO ||
-            aspectRatio > MAX_ASPECT_RATIO) {
-
-            return null;
-        }
-
-        double boxArea =
-                width * (double) height;
-
-        double fillRatio =
-                component.pixelCount / boxArea;
-
-        if (fillRatio < MIN_FILL_RATIO ||
-            fillRatio > MAX_FILL_RATIO) {
-
-            return null;
-        }
-
-        /*
-         * Bounding-box center is less affected by an asymmetric glow
-         * than the mean of all colored pixels.
-         */
-        double centerX =
-                (component.minX + component.maxX) / 2.0;
-
-        double centerY =
-                (component.minY + component.maxY) / 2.0;
-
-        double outerDiameter =
-                (width + height) / 2.0;
-
-        double outerRadius =
-                outerDiameter / 2.0;
-
-        double measuredInnerRadius =
-                estimateInnerRadius(
-                        image,
-                        centerX,
-                        centerY,
-                        outerRadius,
-                        color
-                );
-
-        double collisionRadius;
-
-        if (Double.isFinite(measuredInnerRadius)) {
-            collisionRadius = measuredInnerRadius;
-        } else {
-            collisionRadius =
-                    outerRadius
-                    *
-                    FALLBACK_INNER_RADIUS_FACTOR;
-        }
-
-        return new Portal(
-                color,
-                centerX,
-                centerY,
-                collisionRadius
-        );
-    }
-
-    /*
-     * Measures the first strong colored-ring pixel while walking from
-     * the dark portal center outward. This makes orange and blue use
-     * the real black opening instead of different glow sizes.
-     */
-    private double estimateInnerRadius(
-            BufferedImage image,
-            double centerX,
-            double centerY,
-            double outerRadius,
-            Portal.PortalColor color
-    ) {
-
-        List<Double> samples =
+        List<PortalCandidate> candidates =
                 new ArrayList<>();
 
-        double maxRadius =
-                Math.max(
-                        8.0,
-                        outerRadius * 1.15
+
+        int width =
+                image.getWidth();
+
+
+        int maxY =
+                (int) Math.round(
+                        image.getHeight()
+                        *
+                        MAX_Y_FACTOR
                 );
 
-        for (int ray = 0;
-             ray < RADIUS_RAYS;
-             ray++) {
+
+        /*
+         * Genug Abstand vom Bildrand für MAX_RADIUS.
+         */
+        for (int y = MAX_RADIUS;
+             y < maxY - MAX_RADIUS;
+             y += CENTER_STEP) {
+
+
+            for (int x = MAX_RADIUS;
+                 x < width - MAX_RADIUS;
+                 x += CENTER_STEP) {
+
+
+                // =============================================
+                // FAST CENTER REJECTION
+                // =============================================
+
+                if (!looksLikeDarkPortalCenter(
+                        image,
+                        x,
+                        y
+                )) {
+
+
+                    continue;
+                }
+
+
+                // =============================================
+                // TEST RADII
+                // =============================================
+
+                PortalCandidate bestHere =
+                        null;
+
+
+                for (int radius = MIN_RADIUS;
+                     radius <= MAX_RADIUS;
+                     radius += RADIUS_STEP) {
+
+
+                    PortalCandidate orangeCandidate =
+                            evaluateCandidate(
+                                    image,
+                                    x,
+                                    y,
+                                    radius,
+                                    Portal.PortalColor.ORANGE
+                            );
+
+
+                    if (orangeCandidate != null &&
+                        (
+                                bestHere == null
+                                ||
+                                orangeCandidate.score
+                                        >
+                                bestHere.score
+                        )) {
+
+
+                        bestHere =
+                                orangeCandidate;
+                    }
+
+
+                    PortalCandidate blueCandidate =
+                            evaluateCandidate(
+                                    image,
+                                    x,
+                                    y,
+                                    radius,
+                                    Portal.PortalColor.BLUE
+                            );
+
+
+                    if (blueCandidate != null &&
+                        (
+                                bestHere == null
+                                ||
+                                blueCandidate.score
+                                        >
+                                bestHere.score
+                        )) {
+
+
+                        bestHere =
+                                blueCandidate;
+                    }
+                }
+
+
+                if (bestHere != null &&
+                    bestHere.score
+                            >=
+                    MIN_SCORE) {
+
+
+                    candidates.add(
+                            bestHere
+                    );
+                }
+            }
+        }
+
+
+        return candidates;
+    }
+
+
+    // =========================================================
+    // DARK CENTER
+    // =========================================================
+
+    private boolean looksLikeDarkPortalCenter(
+            BufferedImage image,
+            int centerX,
+            int centerY
+    ) {
+
+        /*
+         * Punkte innerhalb des Portalinnenraums.
+         *
+         * Nicht zu weit außen testen, damit der Ring
+         * noch nicht erfasst wird.
+         */
+        int[][] offsets = {
+
+                {0, 0},
+
+                {8, 0},
+                {-8, 0},
+
+                {0, 8},
+                {0, -8},
+
+                {12, 8},
+                {-12, 8},
+
+                {12, -8},
+                {-12, -8},
+
+                {18, 0},
+                {-18, 0},
+
+                {0, 18},
+                {0, -18}
+        };
+
+
+        int dark =
+                0;
+
+
+        int total =
+                0;
+
+
+        for (int[] offset :
+                offsets) {
+
+
+            int x =
+                    centerX
+                    +
+                    offset[0];
+
+
+            int y =
+                    centerY
+                    +
+                    offset[1];
+
+
+            if (x < 0 ||
+                y < 0 ||
+                x >= image.getWidth() ||
+                y >= image.getHeight()) {
+
+
+                continue;
+            }
+
+
+            total++;
+
+
+            int brightness =
+                    brightness(
+                            image.getRGB(
+                                    x,
+                                    y
+                            )
+                    );
+
+
+            if (brightness
+                    <=
+                DARK_CENTER_MAX_BRIGHTNESS) {
+
+
+                dark++;
+            }
+        }
+
+
+        if (total == 0) {
+
+            return false;
+        }
+
+
+        double ratio =
+                (double) dark
+                /
+                total;
+
+
+        return ratio
+                >=
+                MIN_DARK_CENTER_RATIO;
+    }
+
+
+    // =========================================================
+    // EVALUATE PORTAL
+    // =========================================================
+
+    private PortalCandidate evaluateCandidate(
+            BufferedImage image,
+
+            double centerX,
+            double centerY,
+
+            double radius,
+
+            Portal.PortalColor color
+    ) {
+
+        int ringMatches =
+                0;
+
+
+        int contrastMatches =
+                0;
+
+
+        int validSamples =
+                0;
+
+
+        /*
+         * Wir testen drei Radien:
+         *
+         * innerRadius -> sollte dunkel sein
+         * radius      -> farbiger Ring
+         * outerRadius -> Glow / Umgebung
+         */
+        double innerRadius =
+                radius
+                *
+                0.72;
+
+
+        for (int sample = 0;
+             sample < RING_SAMPLES;
+             sample++) {
+
 
             double angle =
                     2.0
                     *
                     Math.PI
                     *
-                    ray
+                    sample
                     /
-                    RADIUS_RAYS;
+                    RING_SAMPLES;
+
 
             double cos =
-                    Math.cos(angle);
+                    Math.cos(
+                            angle
+                    );
+
 
             double sin =
-                    Math.sin(angle);
+                    Math.sin(
+                            angle
+                    );
 
-            double found =
-                    Double.NaN;
+
+            int ringX =
+                    (int) Math.round(
+                            centerX
+                            +
+                            cos
+                            *
+                            radius
+                    );
+
+
+            int ringY =
+                    (int) Math.round(
+                            centerY
+                            +
+                            sin
+                            *
+                            radius
+                    );
+
+
+            int innerX =
+                    (int) Math.round(
+                            centerX
+                            +
+                            cos
+                            *
+                            innerRadius
+                    );
+
+
+            int innerY =
+                    (int) Math.round(
+                            centerY
+                            +
+                            sin
+                            *
+                            innerRadius
+                    );
+
+
+            if (!insideImage(
+                    image,
+                    ringX,
+                    ringY
+            ) ||
+                !insideImage(
+                        image,
+                        innerX,
+                        innerY
+                )) {
+
+
+                continue;
+            }
+
+
+            validSamples++;
+
+
+            int ringRgb =
+                    image.getRGB(
+                            ringX,
+                            ringY
+                    );
+
+
+            int innerRgb =
+                    image.getRGB(
+                            innerX,
+                            innerY
+                    );
+
+
+            if (matchesPortalRing(
+                    ringRgb,
+                    color
+            )) {
+
+
+                ringMatches++;
+            }
+
+
+            int ringBrightness =
+                    brightness(
+                            ringRgb
+                    );
+
+
+            int innerBrightness =
+                    brightness(
+                            innerRgb
+                    );
+
 
             /*
-             * Starting a few pixels away from the center avoids any
-             * number/text rendered inside the portal.
+             * Portalring sollte deutlich heller sein
+             * als seine Innenöffnung.
              */
-            for (double radius = 8.0;
-                 radius <= maxRadius;
-                 radius += 0.5) {
+            if (ringBrightness
+                    >=
+                innerBrightness
+                +
+                45) {
 
-                int x =
-                        (int) Math.round(
-                                centerX + cos * radius
-                        );
 
-                int y =
-                        (int) Math.round(
-                                centerY + sin * radius
-                        );
-
-                if (x < 0 ||
-                    y < 0 ||
-                    x >= image.getWidth() ||
-                    y >= image.getHeight()) {
-
-                    break;
-                }
-
-                int rgb =
-                        image.getRGB(x, y);
-
-                boolean ringPixel;
-
-                if (color ==
-                    Portal.PortalColor.ORANGE) {
-
-                    ringPixel =
-                            isOrangePortalPixel(rgb);
-
-                } else {
-
-                    ringPixel =
-                            isBluePortalPixel(rgb);
-                }
-
-                if (ringPixel) {
-                    found = radius;
-                    break;
-                }
-            }
-
-            if (Double.isFinite(found)) {
-                samples.add(found);
+                contrastMatches++;
             }
         }
 
-        if (samples.size()
+
+        if (validSamples == 0) {
+
+            return null;
+        }
+
+
+        double ringRatio =
+                (double) ringMatches
+                /
+                validSamples;
+
+
+        double contrastRatio =
+                (double) contrastMatches
+                /
+                validSamples;
+
+
+        if (ringRatio
                 <
-            RADIUS_RAYS
-            *
-            MIN_VALID_RAY_FACTOR) {
+            MIN_RING_MATCH_RATIO) {
 
-            return Double.NaN;
+
+            return null;
         }
 
-        samples.sort(Double::compareTo);
 
-        /*
-         * Median is robust against rays crossing the portal number,
-         * sparks or stronger glow streaks.
-         */
-        int middle =
-                samples.size() / 2;
+        if (contrastRatio
+                <
+            MIN_RING_CONTRAST_RATIO) {
 
-        double median;
 
-        if (samples.size() % 2 == 0) {
-            median =
-                    (
-                            samples.get(middle - 1)
-                            +
-                            samples.get(middle)
-                    )
-                    /
-                    2.0;
-        } else {
-            median =
-                    samples.get(middle);
+            return null;
         }
 
+
         /*
-         * Stay one pixel inside the visual ring so the trigger area
-         * corresponds to the black opening rather than its bright edge.
+         * Ringfarbe ist wichtiger als Kontrast.
          */
-        return Math.max(
-                5.0,
-                median - 1.0
+        double score =
+                ringRatio
+                *
+                0.70
+                +
+                contrastRatio
+                *
+                0.30;
+
+
+        return new PortalCandidate(
+                color,
+                centerX,
+                centerY,
+                radius,
+                score
         );
     }
 
-    private Component floodFill(
-            BufferedImage image,
-            int startX,
-            int startY,
-            int maxY,
-            boolean[][] visited,
-            boolean orange
+
+    // =========================================================
+    // PORTAL RING COLORS
+    // =========================================================
+
+    private boolean matchesPortalRing(
+            int rgb,
+            Portal.PortalColor color
     ) {
 
-        Queue<int[]> queue =
-                new ArrayDeque<>();
+        if (color
+                ==
+            Portal.PortalColor.ORANGE) {
 
-        queue.add(
-                new int[]{
-                        startX,
-                        startY
-                }
-        );
 
-        Component component =
-                new Component(
-                        startX,
-                        startY
-                );
-
-        while (!queue.isEmpty()) {
-
-            int[] point =
-                    queue.poll();
-
-            int x =
-                    point[0];
-
-            int y =
-                    point[1];
-
-            component.add(x, y);
-
-            for (int offsetY = -1;
-                 offsetY <= 1;
-                 offsetY++) {
-
-                for (int offsetX = -1;
-                     offsetX <= 1;
-                     offsetX++) {
-
-                    if (offsetX == 0 &&
-                        offsetY == 0) {
-
-                        continue;
-                    }
-
-                    addNeighbor(
-                            image,
-                            x + offsetX,
-                            y + offsetY,
-                            maxY,
-                            visited,
-                            queue,
-                            orange
-                    );
-                }
-            }
-        }
-
-        return component;
-    }
-
-    private void addNeighbor(
-            BufferedImage image,
-            int x,
-            int y,
-            int maxY,
-            boolean[][] visited,
-            Queue<int[]> queue,
-            boolean orange
-    ) {
-
-        if (x < 0 ||
-            y < 0 ||
-            x >= image.getWidth() ||
-            y >= maxY ||
-            visited[x][y]) {
-
-            return;
-        }
-
-        visited[x][y] = true;
-
-        if (isPortalPixel(
-                image.getRGB(x, y),
-                orange
-        )) {
-
-            queue.add(
-                    new int[]{
-                            x,
-                            y
-                    }
+            return isOrangeRing(
+                    rgb
             );
         }
+
+
+        return isBlueRing(
+                rgb
+        );
     }
 
-    private boolean isPortalPixel(
-            int rgb,
-            boolean orange
-    ) {
 
-        if (orange) {
-            return isOrangePortalPixel(rgb);
-        }
-
-        return isBluePortalPixel(rgb);
-    }
-
-    private boolean isOrangePortalPixel(
+    private boolean isOrangeRing(
             int rgb
     ) {
 
         Color color =
-                new Color(rgb);
+                new Color(
+                        rgb
+                );
 
-        int r = color.getRed();
-        int g = color.getGreen();
-        int b = color.getBlue();
 
-        return r >= 145
+        int r =
+                color.getRed();
+
+        int g =
+                color.getGreen();
+
+        int b =
+                color.getBlue();
+
+
+        /*
+         * Orange / gold.
+         *
+         * Hier darf der Filter wieder relativ streng sein,
+         * weil wir nicht mehr ganze Komponenten verbinden.
+         */
+        boolean redStrong =
+                r >= 125;
+
+
+        boolean greenPresent =
+                g >= 45;
+
+
+        boolean redDominates =
+                r >= g * 1.15
                 &&
-                g >= 55
+                r >= b * 1.45;
+
+
+        boolean notBlue =
+                b <= 145;
+
+
+        return redStrong
                 &&
-                g <= 190
+                greenPresent
                 &&
-                b <= 105
+                redDominates
                 &&
-                r >= g * 1.25
-                &&
-                r >= b * 1.70;
+                notBlue;
     }
 
-    private boolean isBluePortalPixel(
+
+    private boolean isBlueRing(
             int rgb
     ) {
 
         Color color =
-                new Color(rgb);
+                new Color(
+                        rgb
+                );
 
-        int r = color.getRed();
-        int g = color.getGreen();
-        int b = color.getBlue();
 
-        return b >= 135
+        int r =
+                color.getRed();
+
+        int g =
+                color.getGreen();
+
+        int b =
+                color.getBlue();
+
+
+        /*
+         * Blau / Cyan.
+         *
+         * Terrain kann dieselbe Farbe haben.
+         * Das ist jetzt aber okay:
+         *
+         * Ein Terrainpixel allein reicht nicht mehr.
+         * Es muss kreisförmig um eine dunkle Öffnung
+         * verteilt sein.
+         */
+        boolean blueStrong =
+                b >= 115;
+
+
+        boolean greenPresent =
+                g >= 55;
+
+
+        boolean blueDominates =
+                b >= r * 1.25;
+
+
+        boolean notTooRed =
+                r <= 125;
+
+
+        return blueStrong
                 &&
-                g >= 70
+                greenPresent
                 &&
-                r <= 110
+                blueDominates
                 &&
-                b >= r * 1.60
-                &&
-                b >= g * 1.05;
+                notTooRed;
     }
 
-    private static class Component {
 
-        private int minX;
-        private int minY;
-        private int maxX;
-        private int maxY;
-        private int pixelCount;
+    // =========================================================
+    // HELPERS
+    // =========================================================
 
-        private Component(
-                int x,
-                int y
+    private boolean insideImage(
+            BufferedImage image,
+            int x,
+            int y
+    ) {
+
+        return x >= 0
+                &&
+                y >= 0
+                &&
+                x < image.getWidth()
+                &&
+                y < image.getHeight();
+    }
+
+
+    private int brightness(
+            int rgb
+    ) {
+
+        Color color =
+                new Color(
+                        rgb
+                );
+
+
+        /*
+         * Perceptual-ish brightness.
+         *
+         * Wertebereich weiterhin ungefähr 0..255.
+         */
+        return (int) Math.round(
+                color.getRed()
+                        *
+                        0.2126
+                +
+                color.getGreen()
+                        *
+                        0.7152
+                +
+                color.getBlue()
+                        *
+                        0.0722
+        );
+    }
+
+
+    // =========================================================
+    // INTERNAL CANDIDATE
+    // =========================================================
+
+    private static class PortalCandidate {
+
+        private final Portal.PortalColor color;
+
+        private final double centerX;
+        private final double centerY;
+
+        private final double radius;
+
+        private final double score;
+
+
+        private PortalCandidate(
+                Portal.PortalColor color,
+
+                double centerX,
+                double centerY,
+
+                double radius,
+
+                double score
         ) {
 
-            minX = x;
-            minY = y;
-            maxX = x;
-            maxY = y;
-            pixelCount = 0;
-        }
+            this.color =
+                    color;
 
-        private void add(
-                int x,
-                int y
-        ) {
 
-            minX = Math.min(minX, x);
-            minY = Math.min(minY, y);
-            maxX = Math.max(maxX, x);
-            maxY = Math.max(maxY, y);
+            this.centerX =
+                    centerX;
 
-            pixelCount++;
-        }
 
-        private int getWidth() {
-            return maxX - minX + 1;
-        }
+            this.centerY =
+                    centerY;
 
-        private int getHeight() {
-            return maxY - minY + 1;
+
+            this.radius =
+                    radius;
+
+
+            this.score =
+                    score;
         }
     }
 }
