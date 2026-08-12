@@ -1,14 +1,10 @@
 package app;
-import model.DamageMultiplier;
-
-import util.DamageMultiplierDebugRenderer;
-
-import vision.DamageMultiplierDetector;
 
 import capture.CaptureRegion;
 import capture.ScreenCapture;
 
 import model.Bumper;
+import model.DamageMultiplier;
 import model.PlayerState;
 import model.Shot;
 import model.ShotResult;
@@ -20,11 +16,13 @@ import physics.ShotOptimizer;
 import physics.TrajectoryCalculator;
 
 import util.BumperDebugRenderer;
+import util.DamageMultiplierDebugRenderer;
 import util.ImageUtils;
 
 import vision.Blob;
 import vision.BlobDetector;
 import vision.BumperDetector;
+import vision.DamageMultiplierDetector;
 import vision.PlayerDetector;
 import vision.TerrainDetector;
 import vision.WindDetector;
@@ -307,70 +305,71 @@ public class ShellShockAssistant {
                 );
             }
 
+
             // =====================================================
-// DAMAGE MULTIPLIER DETECTION
-// =====================================================
+            // DAMAGE MULTIPLIER DETECTION
+            // =====================================================
 
-DamageMultiplierDetector damageMultiplierDetector =
-        new DamageMultiplierDetector();
-
-
-List<DamageMultiplier> damageMultipliers =
-        damageMultiplierDetector.detect(
-                screenshot
-        );
+            DamageMultiplierDetector damageMultiplierDetector =
+                    new DamageMultiplierDetector();
 
 
-DamageMultiplierDebugRenderer damageMultiplierDebugRenderer =
-        new DamageMultiplierDebugRenderer();
+            List<DamageMultiplier> damageMultipliers =
+                    damageMultiplierDetector.detect(
+                            screenshot
+                    );
 
 
-BufferedImage damageMultiplierDebug =
-        damageMultiplierDebugRenderer.draw(
-                screenshot,
-                damageMultipliers
-        );
+            DamageMultiplierDebugRenderer damageMultiplierDebugRenderer =
+                    new DamageMultiplierDebugRenderer();
 
 
-ImageUtils.saveImage(
-        damageMultiplierDebug,
-        "data/screenshots/damage_multiplier_debug.png"
-);
+            BufferedImage damageMultiplierDebug =
+                    damageMultiplierDebugRenderer.draw(
+                            screenshot,
+                            damageMultipliers
+                    );
 
 
-System.out.println();
+            ImageUtils.saveImage(
+                    damageMultiplierDebug,
+                    "data/screenshots/damage_multiplier_debug.png"
+            );
 
 
-System.out.println(
-        "=============================="
-);
+            System.out.println();
 
 
-System.out.println(
-        "DAMAGE MULTIPLIERS"
-);
+            System.out.println(
+                    "=============================="
+            );
 
 
-System.out.println(
-        "=============================="
-);
+            System.out.println(
+                    "DAMAGE MULTIPLIERS"
+            );
 
 
-System.out.println(
-        "Gefunden: "
-        +
-        damageMultipliers.size()
-);
+            System.out.println(
+                    "=============================="
+            );
 
 
-for (DamageMultiplier multiplier :
-        damageMultipliers) {
+            System.out.println(
+                    "Gefunden: "
+                    +
+                    damageMultipliers.size()
+            );
 
 
-    System.out.println(
-            multiplier
-    );
-}
+            for (DamageMultiplier multiplier :
+                    damageMultipliers) {
+
+
+                System.out.println(
+                        multiplier
+                );
+            }
 
 
             // =====================================================
@@ -458,7 +457,8 @@ for (DamageMultiplier multiplier :
                                 player,
                                 terrain,
                                 wind,
-                                bumpers
+                                bumpers,
+                                damageMultipliers
                         );
 
 
@@ -512,10 +512,25 @@ for (DamageMultiplier multiplier :
                 );
 
 
-                if (overallBest == null ||
-                    result.getClosestDistance()
-                    <
-                    overallBest.getClosestDistance()) {
+                System.out.println(
+                        "Damage Multiplier: X"
+                        +
+                        result.getDamageMultiplier()
+                );
+
+
+                /*
+                 * Dieselbe Ranking-Logik auch über
+                 * mehrere Gegner hinweg:
+                 *
+                 * Hit > Miss
+                 * X3 > X2 > normal
+                 * danach Genauigkeit
+                 */
+                if (optimizer.isBetterResult(
+                        result,
+                        overallBest
+                )) {
 
 
                     overallBest =
@@ -623,6 +638,14 @@ for (DamageMultiplier multiplier :
                 );
 
 
+                System.out.println(
+                        "Damage Multiplier: X"
+                        +
+                        overallBest
+                                .getDamageMultiplier()
+                );
+
+
             } else {
 
 
@@ -672,6 +695,13 @@ for (DamageMultiplier multiplier :
                     "Bumpers gefunden: "
                     +
                     bumpers.size()
+            );
+
+
+            System.out.println(
+                    "Damage Multipliers gefunden: "
+                    +
+                    damageMultipliers.size()
             );
 
 
