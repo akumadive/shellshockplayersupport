@@ -1,5 +1,6 @@
 package physics;
 
+import model.BlackHole;
 import model.Bumper;
 import model.DamageMultiplier;
 import model.PlayerState;
@@ -12,24 +13,35 @@ import model.TrajectoryPoint;
 import java.util.Collections;
 import java.util.List;
 
+
 public class ShotOptimizer {
 
     private final TrajectoryCalculator trajectoryCalculator;
 
-    private static final double TARGET_HIT_RADIUS = 15.0;
+
+    private static final double TARGET_HIT_RADIUS =
+            15.0;
+
 
     public ShotOptimizer(
             TrajectoryCalculator trajectoryCalculator
     ) {
+
         this.trajectoryCalculator =
                 trajectoryCalculator;
     }
+
+
+    // =========================================================
+    // OLD API
+    // =========================================================
 
     public ShotResult findBestShot(
             PlayerState shooter,
             PlayerState target,
             TerrainProfile terrain
     ) {
+
         return findBestShot(
                 shooter,
                 target,
@@ -37,9 +49,11 @@ public class ShotOptimizer {
                 0.0,
                 Collections.emptyList(),
                 Collections.emptyList(),
+                Collections.emptyList(),
                 Collections.emptyList()
         );
     }
+
 
     public ShotResult findBestShot(
             PlayerState shooter,
@@ -47,6 +61,7 @@ public class ShotOptimizer {
             TerrainProfile terrain,
             double wind
     ) {
+
         return findBestShot(
                 shooter,
                 target,
@@ -54,9 +69,11 @@ public class ShotOptimizer {
                 wind,
                 Collections.emptyList(),
                 Collections.emptyList(),
+                Collections.emptyList(),
                 Collections.emptyList()
         );
     }
+
 
     public ShotResult findBestShot(
             PlayerState shooter,
@@ -65,6 +82,7 @@ public class ShotOptimizer {
             double wind,
             List<Bumper> bumpers
     ) {
+
         return findBestShot(
                 shooter,
                 target,
@@ -72,9 +90,11 @@ public class ShotOptimizer {
                 wind,
                 bumpers,
                 Collections.emptyList(),
+                Collections.emptyList(),
                 Collections.emptyList()
         );
     }
+
 
     public ShotResult findBestShot(
             PlayerState shooter,
@@ -84,6 +104,7 @@ public class ShotOptimizer {
             List<Bumper> bumpers,
             List<DamageMultiplier> damageMultipliers
     ) {
+
         return findBestShot(
                 shooter,
                 target,
@@ -91,9 +112,34 @@ public class ShotOptimizer {
                 wind,
                 bumpers,
                 damageMultipliers,
+                Collections.emptyList(),
                 Collections.emptyList()
         );
     }
+
+
+    public ShotResult findBestShot(
+            PlayerState shooter,
+            PlayerState target,
+            TerrainProfile terrain,
+            double wind,
+            List<Bumper> bumpers,
+            List<DamageMultiplier> damageMultipliers,
+            List<PortalPair> portalPairs
+    ) {
+
+        return findBestShot(
+                shooter,
+                target,
+                terrain,
+                wind,
+                bumpers,
+                damageMultipliers,
+                portalPairs,
+                Collections.emptyList()
+        );
+    }
+
 
     // =========================================================
     // FULL OPTIMIZER
@@ -106,62 +152,110 @@ public class ShotOptimizer {
             double wind,
             List<Bumper> bumpers,
             List<DamageMultiplier> damageMultipliers,
-            List<PortalPair> portalPairs
+            List<PortalPair> portalPairs,
+            List<BlackHole> blackHoles
     ) {
 
         if (bumpers == null) {
-            bumpers = Collections.emptyList();
+
+            bumpers =
+                    Collections.emptyList();
         }
+
 
         if (damageMultipliers == null) {
-            damageMultipliers = Collections.emptyList();
+
+            damageMultipliers =
+                    Collections.emptyList();
         }
+
 
         if (portalPairs == null) {
-            portalPairs = Collections.emptyList();
+
+            portalPairs =
+                    Collections.emptyList();
         }
 
-        ShotResult bestResult = null;
+
+        if (blackHoles == null) {
+
+            blackHoles =
+                    Collections.emptyList();
+        }
+
+
+        ShotResult bestResult =
+                null;
+
+
+        // =====================================================
+        // ANGLE RANGE
+        // =====================================================
 
         int minAngle;
         int maxAngle;
 
+
         /*
-         * A bumper OR portal can make a valid path initially travel in
-         * an unintuitive direction, so search the full angular range.
+         * Bumper / Portale / Black Holes können eine sinnvolle
+         * Bahn erzeugen, obwohl der Shot zunächst in eine
+         * unerwartete Richtung fliegt.
          */
         if (!bumpers.isEmpty() ||
-            !portalPairs.isEmpty()) {
+            !portalPairs.isEmpty() ||
+            !blackHoles.isEmpty()) {
 
-            minAngle = 1;
-            maxAngle = 179;
+
+            minAngle =
+                    1;
+
+            maxAngle =
+                    179;
+
 
         } else if (target.getX()
                    >=
                    shooter.getX()) {
 
-            minAngle = 1;
-            maxAngle = 89;
+
+            minAngle =
+                    1;
+
+            maxAngle =
+                    89;
+
 
         } else {
 
-            minAngle = 91;
-            maxAngle = 179;
+
+            minAngle =
+                    91;
+
+            maxAngle =
+                    179;
         }
+
+
+        // =====================================================
+        // SEARCH
+        // =====================================================
 
         for (int power = 1;
              power <= 100;
              power++) {
 
+
             for (int angle = minAngle;
                  angle <= maxAngle;
                  angle++) {
+
 
                 Shot shot =
                         new Shot(
                                 power,
                                 angle
                         );
+
 
                 List<TrajectoryPoint> trajectory =
                         trajectoryCalculator.calculate(
@@ -170,8 +264,10 @@ public class ShotOptimizer {
                                 terrain,
                                 wind,
                                 bumpers,
-                                portalPairs
+                                portalPairs,
+                                blackHoles
                         );
+
 
                 ShotResult result =
                         evaluateTrajectory(
@@ -181,18 +277,27 @@ public class ShotOptimizer {
                                 damageMultipliers
                         );
 
+
                 if (isBetterResult(
                         result,
                         bestResult
                 )) {
 
-                    bestResult = result;
+
+                    bestResult =
+                            result;
                 }
             }
         }
 
+
         return bestResult;
     }
+
+
+    // =========================================================
+    // RESULT RANKING
+    // =========================================================
 
     public boolean isBetterResult(
             ShotResult candidate,
@@ -200,56 +305,96 @@ public class ShotOptimizer {
     ) {
 
         if (candidate == null) {
+
             return false;
         }
 
+
         if (currentBest == null) {
+
             return true;
         }
+
 
         boolean candidateHit =
                 candidate.isDirectHit();
 
+
         boolean bestHit =
                 currentBest.isDirectHit();
+
+
+        // =====================================================
+        // HIT > MISS
+        // =====================================================
 
         if (candidateHit &&
             !bestHit) {
 
+
             return true;
         }
+
 
         if (!candidateHit &&
             bestHit) {
 
+
             return false;
         }
 
+
+        // =====================================================
+        // BOTH HIT
+        // =====================================================
+
         if (candidateHit) {
 
+
+            /*
+             * X3 > X2 > normal
+             */
             if (candidate.getDamageMultiplier()
                     >
                 currentBest.getDamageMultiplier()) {
 
+
                 return true;
             }
+
 
             if (candidate.getDamageMultiplier()
                     <
                 currentBest.getDamageMultiplier()) {
 
+
                 return false;
             }
 
+
+            /*
+             * Gleicher Multiplier:
+             * präziserer Treffer gewinnt.
+             */
             return candidate.getClosestDistance()
                     <
                     currentBest.getClosestDistance();
         }
 
+
+        // =====================================================
+        // BOTH MISS
+        // =====================================================
+
         return candidate.getClosestDistance()
                 <
                 currentBest.getClosestDistance();
     }
+
+
+    // =========================================================
+    // TRAJECTORY EVALUATION
+    // =========================================================
 
     private ShotResult evaluateTrajectory(
             Shot shot,
@@ -261,16 +406,30 @@ public class ShotOptimizer {
         double bestDistance =
                 Double.MAX_VALUE;
 
-        double bestX = 0.0;
-        double bestY = 0.0;
 
-        int activeMultiplier = 1;
-        int hitMultiplier = 1;
+        double bestX =
+                0.0;
 
-        boolean targetHit = false;
+
+        double bestY =
+                0.0;
+
+
+        int activeMultiplier =
+                1;
+
+
+        int hitMultiplier =
+                1;
+
+
+        boolean targetHit =
+                false;
+
 
         if (trajectory == null ||
             trajectory.isEmpty()) {
+
 
             return new ShotResult(
                     shot,
@@ -282,14 +441,24 @@ public class ShotOptimizer {
             );
         }
 
+
         for (int i = 0;
              i < trajectory.size();
              i++) {
 
+
             TrajectoryPoint point =
-                    trajectory.get(i);
+                    trajectory.get(
+                            i
+                    );
+
+
+            // =================================================
+            // DAMAGE MULTIPLIER
+            // =================================================
 
             if (!targetHit) {
+
 
                 activeMultiplier =
                         Math.max(
@@ -300,24 +469,33 @@ public class ShotOptimizer {
                                 )
                         );
 
+
                 if (i > 0) {
 
+
                     TrajectoryPoint previous =
-                            trajectory.get(i - 1);
+                            trajectory.get(
+                                    i - 1
+                            );
+
 
                     /*
-                     * Important portal detail:
+                     * Portal-Teleport:
                      *
-                     * A teleport is represented by two points with the
-                     * SAME timestamp. Do NOT treat that visual jump as a
-                     * physical segment, otherwise an X2 sitting between
-                     * the two portals would falsely count as collected.
+                     * Entry und Exit haben denselben Timestamp.
+                     *
+                     * Deshalb darf der optische Sprung zwischen
+                     * beiden Punkten NICHT als physische Linie
+                     * auf X2/X3 geprüft werden.
                      */
                     if (Math.abs(
                             previous.getTime()
                             -
                             point.getTime()
-                    ) > 0.000001) {
+                    )
+                            >
+                        0.000001) {
+
 
                         activeMultiplier =
                                 Math.max(
@@ -332,15 +510,22 @@ public class ShotOptimizer {
                 }
             }
 
+
+            // =================================================
+            // TARGET DISTANCE
+            // =================================================
+
             double dx =
                     point.getX()
                     -
                     target.getX();
 
+
             double dy =
                     point.getY()
                     -
                     target.getY();
+
 
             double distance =
                     Math.sqrt(
@@ -349,24 +534,52 @@ public class ShotOptimizer {
                             dy * dy
                     );
 
+
             if (distance < bestDistance) {
 
-                bestDistance = distance;
-                bestX = point.getX();
-                bestY = point.getY();
+
+                bestDistance =
+                        distance;
+
+
+                bestX =
+                        point.getX();
+
+
+                bestY =
+                        point.getY();
             }
+
+
+            // =================================================
+            // TARGET HIT
+            // =================================================
 
             if (!targetHit &&
                 distance <= TARGET_HIT_RADIUS) {
 
-                targetHit = true;
-                hitMultiplier = activeMultiplier;
+
+                targetHit =
+                        true;
+
+
+                hitMultiplier =
+                        activeMultiplier;
             }
         }
 
+
+        /*
+         * Wenn kein echter Hit:
+         * Multiplier irrelevant.
+         */
         if (!targetHit) {
-            hitMultiplier = 1;
+
+
+            hitMultiplier =
+                    1;
         }
+
 
         return new ShotResult(
                 shot,
@@ -378,20 +591,29 @@ public class ShotOptimizer {
         );
     }
 
+
+    // =========================================================
+    // MULTIPLIER POINT
+    // =========================================================
+
     private int getHighestMultiplierAtPoint(
             TrajectoryPoint point,
             List<DamageMultiplier> damageMultipliers
     ) {
 
-        int highest = 1;
+        int highest =
+                1;
+
 
         for (DamageMultiplier multiplier :
                 damageMultipliers) {
+
 
             if (multiplier.contains(
                     point.getX(),
                     point.getY()
             )) {
+
 
                 highest =
                         Math.max(
@@ -401,8 +623,14 @@ public class ShotOptimizer {
             }
         }
 
+
         return highest;
     }
+
+
+    // =========================================================
+    // MULTIPLIER SEGMENT
+    // =========================================================
 
     private int getHighestMultiplierOnSegment(
             TrajectoryPoint start,
@@ -410,20 +638,27 @@ public class ShotOptimizer {
             List<DamageMultiplier> damageMultipliers
     ) {
 
-        int highest = 1;
+        int highest =
+                1;
+
 
         for (DamageMultiplier multiplier :
                 damageMultipliers) {
 
+
             if (segmentIntersectsCircle(
                     start.getX(),
                     start.getY(),
+
                     end.getX(),
                     end.getY(),
+
                     multiplier.getCenterX(),
                     multiplier.getCenterY(),
+
                     multiplier.getRadius()
             )) {
+
 
                 highest =
                         Math.max(
@@ -433,34 +668,62 @@ public class ShotOptimizer {
             }
         }
 
+
         return highest;
     }
+
+
+    // =========================================================
+    // SEGMENT / CIRCLE
+    // =========================================================
 
     private boolean segmentIntersectsCircle(
             double startX,
             double startY,
+
             double endX,
             double endY,
+
             double centerX,
             double centerY,
+
             double radius
     ) {
 
-        double dx = endX - startX;
-        double dy = endY - startY;
+        double dx =
+                endX
+                -
+                startX;
+
+
+        double dy =
+                endY
+                -
+                startY;
+
 
         double lengthSquared =
                 dx * dx
                 +
                 dy * dy;
 
-        if (lengthSquared <= 0.000001) {
+
+        if (lengthSquared
+                <=
+            0.000001) {
+
 
             double pointDx =
-                    startX - centerX;
+                    startX
+                    -
+                    centerX;
+
 
             double pointDy =
-                    startY - centerY;
+                    startY
+                    -
+                    centerY;
+
 
             return pointDx * pointDx
                     +
@@ -468,6 +731,7 @@ public class ShotOptimizer {
                     <=
                     radius * radius;
         }
+
 
         double t =
                 (
@@ -478,6 +742,7 @@ public class ShotOptimizer {
                 /
                 lengthSquared;
 
+
         t =
                 Math.max(
                         0.0,
@@ -487,21 +752,30 @@ public class ShotOptimizer {
                         )
                 );
 
+
         double closestX =
                 startX
                 +
                 dx * t;
+
 
         double closestY =
                 startY
                 +
                 dy * t;
 
+
         double distanceX =
-                closestX - centerX;
+                closestX
+                -
+                centerX;
+
 
         double distanceY =
-                closestY - centerY;
+                closestY
+                -
+                centerY;
+
 
         return distanceX * distanceX
                 +

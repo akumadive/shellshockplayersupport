@@ -3,6 +3,7 @@ package app;
 import capture.CaptureRegion;
 import capture.ScreenCapture;
 
+import model.BlackHole;
 import model.Bumper;
 import model.DamageMultiplier;
 import model.PlayerState;
@@ -16,10 +17,12 @@ import physics.PhysicsModel;
 import physics.ShotOptimizer;
 import physics.TrajectoryCalculator;
 
+import util.BlackHoleDebugRenderer;
 import util.BumperDebugRenderer;
 import util.DamageMultiplierDebugRenderer;
 import util.ImageUtils;
 
+import vision.BlackHoleDetector;
 import vision.Blob;
 import vision.BlobDetector;
 import vision.BumperDetector;
@@ -31,13 +34,16 @@ import vision.WindDetector;
 import vision.WindDetector.WindResult;
 
 import java.awt.image.BufferedImage;
+
 import java.util.List;
+
 
 public class ShellShockAssistant {
 
     public static void main(String[] args) {
 
         try {
+
 
             // =====================================================
             // SCREEN CAPTURE
@@ -51,18 +57,22 @@ public class ShellShockAssistant {
                             1080
                     );
 
+
             ScreenCapture screenCapture =
                     new ScreenCapture(
                             region
                     );
 
+
             BufferedImage screenshot =
                     screenCapture.capture();
+
 
             ImageUtils.saveImage(
                     screenshot,
                     "data/screenshots/original.png"
             );
+
 
             // =====================================================
             // WIND
@@ -71,20 +81,24 @@ public class ShellShockAssistant {
             WindDetector windDetector =
                     new WindDetector();
 
+
             WindResult windResult =
                     windDetector.detect(
                             screenshot
                     );
+
 
             BufferedImage windDebug =
                     windDetector.createDebugImage(
                             screenshot
                     );
 
+
             ImageUtils.saveImage(
                     windDebug,
                     "data/screenshots/wind_debug.png"
             );
+
 
             double wind =
                     windResult.isValid()
@@ -92,6 +106,7 @@ public class ShellShockAssistant {
                             windResult.getSignedWind()
                             :
                             0.0;
+
 
             System.out.println();
             System.out.println("==============================");
@@ -102,17 +117,20 @@ public class ShellShockAssistant {
             System.out.println("Valid: " + windResult.isValid());
             System.out.println("Physics Wind: " + wind);
 
+
             // =====================================================
-            // BLOB DEBUG
+            // BLOBS
             // =====================================================
 
             BlobDetector blobDetector =
                     new BlobDetector();
 
+
             List<Blob> blobs =
                     blobDetector.detectBlobs(
                             screenshot
                     );
+
 
             BufferedImage blobDebug =
                     ImageUtils.drawBlobMarkers(
@@ -120,10 +138,12 @@ public class ShellShockAssistant {
                             blobs
                     );
 
+
             ImageUtils.saveImage(
                     blobDebug,
                     "data/screenshots/blob_debug.png"
             );
+
 
             // =====================================================
             // PLAYERS
@@ -132,10 +152,12 @@ public class ShellShockAssistant {
             PlayerDetector playerDetector =
                     new PlayerDetector();
 
+
             List<PlayerState> players =
                     playerDetector.detectPlayers(
                             screenshot
                     );
+
 
             BufferedImage playerDebug =
                     ImageUtils.drawPlayerMarkers(
@@ -143,29 +165,30 @@ public class ShellShockAssistant {
                             players
                     );
 
+
             ImageUtils.saveImage(
                     playerDebug,
                     "data/screenshots/player_debug.png"
             );
+
 
             // =====================================================
             // PORTALS
             // =====================================================
 
             /*
-             * Portal detection MUST happen before terrain detection.
-             *
-             * The blue portal glow is cyan/blue enough to satisfy the
-             * normal terrain color thresholds. The resulting portal
-             * regions are therefore passed to TerrainDetector as masks.
+             * Portale müssen VOR Terrain erkannt werden,
+             * damit ihr Glow maskiert werden kann.
              */
             PortalDetector portalDetector =
                     new PortalDetector();
+
 
             List<PortalPair> portalPairs =
                     portalDetector.detectPortalPairs(
                             screenshot
                     );
+
 
             System.out.println();
             System.out.println("==============================");
@@ -173,14 +196,69 @@ public class ShellShockAssistant {
             System.out.println("==============================");
             System.out.println("Paare gefunden: " + portalPairs.size());
 
+
             for (PortalPair pair :
                     portalPairs) {
+
 
                 System.out.println();
                 System.out.println("PAIR " + pair.getId());
                 System.out.println("Orange: " + pair.getOrangePortal());
                 System.out.println("Blue:   " + pair.getBluePortal());
             }
+
+
+            // =====================================================
+            // BLACK HOLES
+            // =====================================================
+
+            /*
+             * Ebenfalls VOR Terrain:
+             * der blaue Black-Hole-Swirl soll kein Terrain werden.
+             */
+            BlackHoleDetector blackHoleDetector =
+                    new BlackHoleDetector();
+
+
+            List<BlackHole> blackHoles =
+                    blackHoleDetector.detect(
+                            screenshot
+                    );
+
+
+            BlackHoleDebugRenderer blackHoleDebugRenderer =
+                    new BlackHoleDebugRenderer();
+
+
+            BufferedImage blackHoleDebug =
+                    blackHoleDebugRenderer.draw(
+                            screenshot,
+                            blackHoles
+                    );
+
+
+            ImageUtils.saveImage(
+                    blackHoleDebug,
+                    "data/screenshots/black_hole_debug.png"
+            );
+
+
+            System.out.println();
+            System.out.println("==============================");
+            System.out.println("BLACK HOLES");
+            System.out.println("==============================");
+            System.out.println("Gefunden: " + blackHoles.size());
+
+
+            for (BlackHole blackHole :
+                    blackHoles) {
+
+
+                System.out.println(
+                        blackHole
+                );
+            }
+
 
             // =====================================================
             // TERRAIN
@@ -189,11 +267,14 @@ public class ShellShockAssistant {
             TerrainDetector terrainDetector =
                     new TerrainDetector();
 
+
             TerrainProfile terrain =
                     terrainDetector.detectTerrain(
                             screenshot,
-                            portalPairs
+                            portalPairs,
+                            blackHoles
                     );
+
 
             BufferedImage terrainDebug =
                     ImageUtils.drawTerrain(
@@ -201,10 +282,12 @@ public class ShellShockAssistant {
                             terrain
                     );
 
+
             ImageUtils.saveImage(
                     terrainDebug,
                     "data/screenshots/terrain_debug.png"
             );
+
 
             // =====================================================
             // BUMPERS
@@ -213,13 +296,16 @@ public class ShellShockAssistant {
             BumperDetector bumperDetector =
                     new BumperDetector();
 
+
             List<Bumper> bumpers =
                     bumperDetector.detectBumpers(
                             screenshot
                     );
 
+
             BumperDebugRenderer bumperDebugRenderer =
                     new BumperDebugRenderer();
+
 
             BufferedImage bumperDebug =
                     bumperDebugRenderer.drawBumpers(
@@ -227,10 +313,12 @@ public class ShellShockAssistant {
                             bumpers
                     );
 
+
             ImageUtils.saveImage(
                     bumperDebug,
                     "data/screenshots/bumper_debug.png"
             );
+
 
             System.out.println();
             System.out.println("==============================");
@@ -238,9 +326,16 @@ public class ShellShockAssistant {
             System.out.println("==============================");
             System.out.println("Bumpers gefunden: " + bumpers.size());
 
-            for (Bumper bumper : bumpers) {
-                System.out.println(bumper);
+
+            for (Bumper bumper :
+                    bumpers) {
+
+
+                System.out.println(
+                        bumper
+                );
             }
+
 
             // =====================================================
             // DAMAGE MULTIPLIERS
@@ -249,14 +344,17 @@ public class ShellShockAssistant {
             DamageMultiplierDetector damageMultiplierDetector =
                     new DamageMultiplierDetector();
 
+
             List<DamageMultiplier> damageMultipliers =
                     damageMultiplierDetector.detect(
                             screenshot,
                             players
                     );
 
+
             DamageMultiplierDebugRenderer damageMultiplierDebugRenderer =
                     new DamageMultiplierDebugRenderer();
+
 
             BufferedImage damageMultiplierDebug =
                     damageMultiplierDebugRenderer.draw(
@@ -264,10 +362,12 @@ public class ShellShockAssistant {
                             damageMultipliers
                     );
 
+
             ImageUtils.saveImage(
                     damageMultiplierDebug,
                     "data/screenshots/damage_multiplier_debug.png"
             );
+
 
             System.out.println();
             System.out.println("==============================");
@@ -275,63 +375,95 @@ public class ShellShockAssistant {
             System.out.println("==============================");
             System.out.println("Gefunden: " + damageMultipliers.size());
 
+
             for (DamageMultiplier multiplier :
                     damageMultipliers) {
 
-                System.out.println(multiplier);
+
+                System.out.println(
+                        multiplier
+                );
             }
+
 
             // =====================================================
             // FIND SELF
             // =====================================================
 
-            PlayerState self = null;
+            PlayerState self =
+                    null;
+
 
             for (PlayerState player :
                     players) {
+
 
                 if (player.getType()
                         ==
                     PlayerState.PlayerType.SELF) {
 
-                    self = player;
+
+                    self =
+                            player;
+
+
                     break;
                 }
             }
 
+
             if (self == null) {
-                System.out.println("SELF konnte nicht erkannt werden.");
+
+
+                System.out.println(
+                        "SELF konnte nicht erkannt werden."
+                );
+
+
                 return;
             }
 
+
             // =====================================================
-            // PHYSICS / OPTIMIZER
+            // PHYSICS
             // =====================================================
 
             PhysicsModel physicsModel =
                     new PhysicsModel();
+
 
             TrajectoryCalculator calculator =
                     new TrajectoryCalculator(
                             physicsModel
                     );
 
+
             ShotOptimizer optimizer =
                     new ShotOptimizer(
                             calculator
                     );
 
-            ShotResult overallBest = null;
+
+            // =====================================================
+            // TARGET SEARCH
+            // =====================================================
+
+            ShotResult overallBest =
+                    null;
+
 
             for (PlayerState player :
                     players) {
+
 
                 if (player.getType()
                         !=
                     PlayerState.PlayerType.ENEMY) {
 
+
                     continue;
                 }
+
 
                 ShotResult result =
                         optimizer.findBestShot(
@@ -341,15 +473,21 @@ public class ShellShockAssistant {
                                 wind,
                                 bumpers,
                                 damageMultipliers,
-                                portalPairs
+                                portalPairs,
+                                blackHoles
                         );
 
+
                 if (result == null) {
+
                     continue;
                 }
 
+
                 System.out.println();
                 System.out.println("===== TARGET =====");
+
+
                 System.out.println(
                         "Target: "
                         +
@@ -360,12 +498,14 @@ public class ShellShockAssistant {
                         player.getY()
                 );
 
+
                 System.out.println(
                         "Power: "
                         +
                         result.getShot()
                                 .getPower()
                 );
+
 
                 System.out.println(
                         "Angle: "
@@ -374,10 +514,12 @@ public class ShellShockAssistant {
                                 .getAngle()
                 );
 
+
                 System.out.printf(
                         "Miss Distance: %.2f px%n",
                         result.getClosestDistance()
                 );
+
 
                 System.out.println(
                         "Damage Multiplier: X"
@@ -385,14 +527,18 @@ public class ShellShockAssistant {
                         result.getDamageMultiplier()
                 );
 
+
                 if (optimizer.isBetterResult(
                         result,
                         overallBest
                 )) {
 
-                    overallBest = result;
+
+                    overallBest =
+                            result;
                 }
             }
+
 
             // =====================================================
             // BEST TRAJECTORY
@@ -400,8 +546,10 @@ public class ShellShockAssistant {
 
             if (overallBest != null) {
 
+
                 Shot bestShot =
                         overallBest.getShot();
+
 
                 List<TrajectoryPoint> bestTrajectory =
                         calculator.calculate(
@@ -410,8 +558,10 @@ public class ShellShockAssistant {
                                 terrain,
                                 wind,
                                 bumpers,
-                                portalPairs
+                                portalPairs,
+                                blackHoles
                         );
+
 
                 BufferedImage trajectoryDebug =
                         ImageUtils.drawTrajectory(
@@ -419,18 +569,39 @@ public class ShellShockAssistant {
                                 bestTrajectory
                         );
 
+
                 ImageUtils.saveImage(
                         trajectoryDebug,
                         "data/screenshots/trajectory_debug.png"
                 );
 
+
                 System.out.println();
                 System.out.println("==============================");
                 System.out.println("BEST SHOT");
                 System.out.println("==============================");
-                System.out.println("Wind: " + wind);
-                System.out.println("Power: " + bestShot.getPower());
-                System.out.println("Angle: " + bestShot.getAngle());
+
+
+                System.out.println(
+                        "Wind: "
+                        +
+                        wind
+                );
+
+
+                System.out.println(
+                        "Power: "
+                        +
+                        bestShot.getPower()
+                );
+
+
+                System.out.println(
+                        "Angle: "
+                        +
+                        bestShot.getAngle()
+                );
+
 
                 System.out.println(
                         "Target: "
@@ -444,10 +615,12 @@ public class ShellShockAssistant {
                                 .getY()
                 );
 
+
                 System.out.printf(
                         "Miss Distance: %.2f px%n",
                         overallBest.getClosestDistance()
                 );
+
 
                 System.out.println(
                         "Damage Multiplier: X"
@@ -455,10 +628,15 @@ public class ShellShockAssistant {
                         overallBest.getDamageMultiplier()
                 );
 
+
             } else {
 
-                System.out.println("Kein gültiger Shot gefunden.");
+
+                System.out.println(
+                        "Kein gültiger Shot gefunden."
+                );
             }
+
 
             // =====================================================
             // GENERAL DEBUG
@@ -468,14 +646,35 @@ public class ShellShockAssistant {
             System.out.println("==============================");
             System.out.println("DEBUG");
             System.out.println("==============================");
-            System.out.println("Blobs gefunden: " + blobs.size());
-            System.out.println("Players gefunden: " + players.size());
-            System.out.println("Bumpers gefunden: " + bumpers.size());
+
+
+            System.out.println(
+                    "Blobs gefunden: "
+                    +
+                    blobs.size()
+            );
+
+
+            System.out.println(
+                    "Players gefunden: "
+                    +
+                    players.size()
+            );
+
+
+            System.out.println(
+                    "Bumpers gefunden: "
+                    +
+                    bumpers.size()
+            );
+
+
             System.out.println(
                     "Damage Multipliers gefunden: "
                     +
                     damageMultipliers.size()
             );
+
 
             System.out.println(
                     "Portal-Paare gefunden: "
@@ -483,8 +682,17 @@ public class ShellShockAssistant {
                     portalPairs.size()
             );
 
+
+            System.out.println(
+                    "Black Holes gefunden: "
+                    +
+                    blackHoles.size()
+            );
+
+
             for (PlayerState player :
                     players) {
+
 
                 System.out.println(
                         player.getType()
@@ -499,9 +707,15 @@ public class ShellShockAssistant {
                 );
             }
 
-            System.out.println("Terrain erfolgreich analysiert.");
+
+            System.out.println(
+                    "Terrain erfolgreich analysiert."
+            );
+
 
         } catch (Exception e) {
+
+
             e.printStackTrace();
         }
     }

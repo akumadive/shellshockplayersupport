@@ -1,5 +1,6 @@
 package physics;
 
+import model.BlackHole;
 import model.Bumper;
 import model.PlayerState;
 import model.Portal;
@@ -12,49 +13,126 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+
 public class TrajectoryCalculator {
 
     private final PhysicsModel physicsModel;
 
-    private static final double TIME_STEP = 0.05;
-    private static final int MAX_STEPS = 10000;
-    private static final double MAX_SCREEN_Y = 1200.0;
 
-    private static final double SHOOTER_IGNORE_RADIUS = 14.0;
-    private static final double COLLISION_SAMPLE_DISTANCE = 0.5;
+    // =========================================================
+    // GENERAL
+    // =========================================================
 
-    private static final double LINE_BUMPER_RADIUS = 5.0;
-    private static final double CIRCLE_BUMPER_EXTRA_RADIUS = 2.0;
-    private static final double BUMPER_PUSH_OUT = 1.5;
-    private static final int BUMPER_COOLDOWN_STEPS = 4;
-    private static final int MAX_BOUNCES = 20;
+    private static final double TIME_STEP =
+            0.05;
+
+    private static final int MAX_STEPS =
+            10000;
+
+    private static final double MAX_SCREEN_Y =
+            1200.0;
+
+    private static final double COLLISION_SAMPLE_DISTANCE =
+            0.5;
+
+    private static final double EVENT_EPSILON =
+            0.000001;
+
+    private static final int MAX_EVENTS_PER_STEP =
+            16;
+
+
+    // =========================================================
+    // TERRAIN
+    // =========================================================
+
+    private static final double SHOOTER_IGNORE_RADIUS =
+            14.0;
+
+
+    // =========================================================
+    // BUMPER
+    // =========================================================
+
+    private static final double LINE_BUMPER_RADIUS =
+            5.0;
+
+    private static final double CIRCLE_BUMPER_EXTRA_RADIUS =
+            2.0;
+
+    private static final double BUMPER_PUSH_OUT =
+            1.5;
+
+    private static final int BUMPER_COOLDOWN_STEPS =
+            4;
+
+    private static final int MAX_BOUNCES =
+            20;
+
+
+    // =========================================================
+    // BLACK HOLE
+    // =========================================================
 
     /*
-     * More than enough for pathological same-frame portal/bounce chains.
+     * ERSTER Kalibrierwert.
+     *
+     * Das ist aktuell der einzige Wert, den wir nach deinem
+     * nächsten Test wahrscheinlich noch verändern müssen.
+     *
+     * Wir vergleichen unsere berechnete Kurve danach mit
+     * deinen echten gestrichelten ShellShock-Trajectories.
      */
-    private static final int MAX_EVENTS_PER_STEP = 16;
-    private static final double EVENT_EPSILON = 0.000001;
+    private static final double BLACK_HOLE_MAX_ACCELERATION =
+            8.0;
+
+
+    /*
+     * Stärke:
+     *
+     * Rand des Influence-Radius:
+     * praktisch 0
+     *
+     * Richtung Core:
+     * zunehmend stärker
+     *
+     * exponent = 2:
+     * weicher Einstieg, starke Kurve innen.
+     */
+    private static final double BLACK_HOLE_FORCE_EXPONENT =
+            2.0;
+
 
     public TrajectoryCalculator(
             PhysicsModel physicsModel
     ) {
-        this.physicsModel = physicsModel;
+
+        this.physicsModel =
+                physicsModel;
     }
+
+
+    // =========================================================
+    // OLD API
+    // =========================================================
 
     public List<TrajectoryPoint> calculate(
             PlayerState shooter,
             Shot shot,
             TerrainProfile terrain
     ) {
+
         return calculate(
                 shooter,
                 shot,
                 terrain,
                 0.0,
                 Collections.emptyList(),
+                Collections.emptyList(),
                 Collections.emptyList()
         );
     }
+
 
     public List<TrajectoryPoint> calculate(
             PlayerState shooter,
@@ -62,15 +140,18 @@ public class TrajectoryCalculator {
             TerrainProfile terrain,
             double wind
     ) {
+
         return calculate(
                 shooter,
                 shot,
                 terrain,
                 wind,
                 Collections.emptyList(),
+                Collections.emptyList(),
                 Collections.emptyList()
         );
     }
+
 
     public List<TrajectoryPoint> calculate(
             PlayerState shooter,
@@ -79,19 +160,18 @@ public class TrajectoryCalculator {
             double wind,
             List<Bumper> bumpers
     ) {
+
         return calculate(
                 shooter,
                 shot,
                 terrain,
                 wind,
                 bumpers,
+                Collections.emptyList(),
                 Collections.emptyList()
         );
     }
 
-    // =========================================================
-    // FULL CALCULATION: TERRAIN + BUMPERS + PORTALS
-    // =========================================================
 
     public List<TrajectoryPoint> calculate(
             PlayerState shooter,
@@ -102,65 +182,139 @@ public class TrajectoryCalculator {
             List<PortalPair> portalPairs
     ) {
 
+        return calculate(
+                shooter,
+                shot,
+                terrain,
+                wind,
+                bumpers,
+                portalPairs,
+                Collections.emptyList()
+        );
+    }
+
+
+    // =========================================================
+    // FULL CALCULATION
+    // =========================================================
+
+    public List<TrajectoryPoint> calculate(
+            PlayerState shooter,
+            Shot shot,
+            TerrainProfile terrain,
+            double wind,
+            List<Bumper> bumpers,
+            List<PortalPair> portalPairs,
+            List<BlackHole> blackHoles
+    ) {
+
         if (bumpers == null) {
-            bumpers = Collections.emptyList();
+
+            bumpers =
+                    Collections.emptyList();
         }
 
+
         if (portalPairs == null) {
-            portalPairs = Collections.emptyList();
+
+            portalPairs =
+                    Collections.emptyList();
         }
+
+
+        if (blackHoles == null) {
+
+            blackHoles =
+                    Collections.emptyList();
+        }
+
 
         List<TrajectoryPoint> points =
                 new ArrayList<>();
+
+
+        // =====================================================
+        // INITIAL VELOCITY
+        // =====================================================
 
         double angleRadians =
                 Math.toRadians(
                         shot.getAngle()
                 );
 
+
         double velocity =
                 shot.getPower()
                 *
                 physicsModel.getPowerScale();
 
+
         double vx =
-                Math.cos(angleRadians)
+                Math.cos(
+                        angleRadians
+                )
                 *
                 velocity;
+
 
         double vy =
-                -Math.sin(angleRadians)
+                -Math.sin(
+                        angleRadians
+                )
                 *
                 velocity;
 
-        double x = shooter.getX();
-        double y = shooter.getY();
-        double time = 0.0;
+
+        // =====================================================
+        // START POSITION
+        // =====================================================
+
+        double x =
+                shooter.getX();
+
+        double y =
+                shooter.getY();
+
+        double time =
+                0.0;
+
 
         double windAcceleration =
                 physicsModel.getWindAcceleration(
                         wind
                 );
 
-        Bumper lastHitBumper = null;
-        int bumperCooldown = 0;
-        int bounceCount = 0;
 
-        /*
-         * After teleporting through a pair, this pair stays locked until
-         * the projectile has actually LEFT both portal circles.
-         *
-         * This prevents:
-         * orange -> blue -> orange -> blue ...
-         *
-         * while still allowing the SAME pair again after leaving and
-         * later falling/flying back into it.
-         */
-        PortalPair lockedPortalPair = null;
+        // =====================================================
+        // BUMPER STATE
+        // =====================================================
+
+        Bumper lastHitBumper =
+                null;
+
+        int bumperCooldown =
+                0;
+
+        int bounceCount =
+                0;
+
+
+        // =====================================================
+        // PORTAL STATE
+        // =====================================================
+
+        PortalPair lockedPortalPair =
+                null;
+
+
+        // =====================================================
+        // SIMULATION
+        // =====================================================
 
         for (int step = 0;
              step < MAX_STEPS;
              step++) {
+
 
             points.add(
                     new TrajectoryPoint(
@@ -170,24 +324,30 @@ public class TrajectoryCalculator {
                     )
             );
 
+
             double remainingTime =
                     TIME_STEP;
+
 
             boolean destroyed =
                     false;
 
+
             int eventsThisStep =
                     0;
+
 
             while (remainingTime > EVENT_EPSILON &&
                    eventsThisStep < MAX_EVENTS_PER_STEP) {
 
+
                 eventsThisStep++;
 
-                /*
-                 * Re-arm the pair only after the projectile is no longer
-                 * inside either portal of that pair.
-                 */
+
+                // =============================================
+                // PORTAL RE-ARM
+                // =============================================
+
                 if (lockedPortalPair != null &&
                     isOutsidePortalPair(
                             x,
@@ -195,8 +355,15 @@ public class TrajectoryCalculator {
                             lockedPortalPair
                     )) {
 
-                    lockedPortalPair = null;
+
+                    lockedPortalPair =
+                            null;
                 }
+
+
+                // =============================================
+                // PREDICT NEXT POSITION
+                // =============================================
 
                 double nextX =
                         x
@@ -205,6 +372,7 @@ public class TrajectoryCalculator {
                         *
                         remainingTime;
 
+
                 double nextY =
                         y
                         +
@@ -212,32 +380,44 @@ public class TrajectoryCalculator {
                         *
                         remainingTime;
 
+
                 double nextTime =
                         time
                         +
                         remainingTime;
+
+
+                // =============================================
+                // COLLISION CANDIDATES
+                // =============================================
 
                 PortalCollision portalCollision =
                         findFirstPortalCollision(
                                 x,
                                 y,
                                 time,
+
                                 nextX,
                                 nextY,
                                 nextTime,
+
                                 portalPairs,
                                 lockedPortalPair
                         );
+
 
                 BumperCollision bumperCollision =
                         findBumperCollision(
                                 x,
                                 y,
                                 time,
+
                                 nextX,
                                 nextY,
                                 nextTime,
+
                                 bumpers,
+
                                 bumperCooldown > 0
                                         ?
                                         lastHitBumper
@@ -245,29 +425,47 @@ public class TrajectoryCalculator {
                                         null
                         );
 
+
                 TerrainCollision terrainCollision =
                         findTerrainCollision(
                                 x,
                                 y,
                                 time,
+
                                 nextX,
                                 nextY,
                                 nextTime,
+
                                 shooter,
                                 terrain
                         );
 
-                /*
-                 * Select the event that happens FIRST on this movement
-                 * segment. Portals must not magically beat an earlier
-                 * mountain or bumper, and vice versa.
-                 */
+
+                BlackHoleCollision blackHoleCollision =
+                        findFirstBlackHoleCoreCollision(
+                                x,
+                                y,
+                                time,
+
+                                nextX,
+                                nextY,
+                                nextTime,
+
+                                blackHoles
+                        );
+
+
+                // =============================================
+                // EVENT TIMES
+                // =============================================
+
                 double portalTime =
                         portalCollision == null
                                 ?
                                 Double.POSITIVE_INFINITY
                                 :
                                 portalCollision.time;
+
 
                 double bumperTime =
                         bumperCollision == null
@@ -276,6 +474,7 @@ public class TrajectoryCalculator {
                                 :
                                 bumperCollision.time;
 
+
                 double terrainTime =
                         terrainCollision == null
                                 ?
@@ -283,9 +482,60 @@ public class TrajectoryCalculator {
                                 :
                                 terrainCollision.time;
 
-                if (portalTime <= bumperTime &&
+
+                double blackHoleTime =
+                        blackHoleCollision == null
+                                ?
+                                Double.POSITIVE_INFINITY
+                                :
+                                blackHoleCollision.time;
+
+
+                // =============================================
+                // BLACK HOLE CORE
+                // =============================================
+
+                /*
+                 * Core hat harte Kollisionslogik:
+                 *
+                 * Projektil wird verschluckt.
+                 *
+                 * Kein Bounce.
+                 * Kein Durchflug.
+                 * Keine Fortsetzung.
+                 */
+                if (blackHoleCollision != null &&
+                    blackHoleTime <= portalTime &&
+                    blackHoleTime <= bumperTime &&
+                    blackHoleTime <= terrainTime) {
+
+
+                    points.add(
+                            new TrajectoryPoint(
+                                    blackHoleCollision.x,
+                                    blackHoleCollision.y,
+                                    blackHoleCollision.time
+                            )
+                    );
+
+
+                    destroyed =
+                            true;
+
+
+                    break;
+                }
+
+
+                // =============================================
+                // PORTAL
+                // =============================================
+
+                if (portalCollision != null &&
+                    portalTime <= bumperTime &&
                     portalTime <= terrainTime &&
-                    portalCollision != null) {
+                    portalTime <= blackHoleTime) {
+
 
                     double elapsed =
                             Math.max(
@@ -295,6 +545,7 @@ public class TrajectoryCalculator {
                                     time
                             );
 
+
                     remainingTime =
                             Math.max(
                                     0.0,
@@ -303,8 +554,9 @@ public class TrajectoryCalculator {
                                     elapsed
                             );
 
+
                     /*
-                     * Store exact entry point.
+                     * Exact entry point.
                      */
                     points.add(
                             new TrajectoryPoint(
@@ -314,28 +566,33 @@ public class TrajectoryCalculator {
                             )
                     );
 
+
                     Portal destination =
                             portalCollision.pair
                                     .getOtherPortal(
                                             portalCollision.portal
                                     );
 
+
                     if (destination == null) {
-                        /*
-                         * Should never happen with a valid PortalPair.
-                         */
-                        x = portalCollision.x;
-                        y = portalCollision.y;
-                        time = portalCollision.time;
+
+
+                        x =
+                                portalCollision.x;
+
+                        y =
+                                portalCollision.y;
+
+                        time =
+                                portalCollision.time;
+
+
                         continue;
                     }
 
+
                     /*
-                     * Preserve the EXACT relative position:
-                     *
-                     * 2 px right of entry center
-                     * ->
-                     * 2 px right of exit center.
+                     * Relative position stays identical.
                      */
                     double offsetX =
                             portalCollision.x
@@ -343,36 +600,44 @@ public class TrajectoryCalculator {
                             portalCollision.portal
                                     .getCenterX();
 
+
                     double offsetY =
                             portalCollision.y
                             -
                             portalCollision.portal
                                     .getCenterY();
 
+
                     x =
                             destination.getCenterX()
                             +
                             offsetX;
+
 
                     y =
                             destination.getCenterY()
                             +
                             offsetY;
 
+
                     time =
                             portalCollision.time;
 
+
                     /*
-                     * vx / vy deliberately stay unchanged.
+                     * vx / vy stay exactly unchanged.
                      */
+
 
                     lockedPortalPair =
                             portalCollision.pair;
 
+
                     /*
-                     * Store exact exit point as a second point with the
-                     * SAME timestamp. The debug renderer will therefore
-                     * visibly show the teleport discontinuity.
+                     * Exact exit point.
+                     *
+                     * Same timestamp means:
+                     * this visual teleport is NOT a physical line.
                      */
                     points.add(
                             new TrajectoryPoint(
@@ -382,15 +647,19 @@ public class TrajectoryCalculator {
                             )
                     );
 
-                    /*
-                     * Continue the UNUSED part of this same physics step
-                     * from the exit portal.
-                     */
+
                     continue;
                 }
 
-                if (bumperTime <= terrainTime &&
-                    bumperCollision != null) {
+
+                // =============================================
+                // BUMPER
+                // =============================================
+
+                if (bumperCollision != null &&
+                    bumperTime <= terrainTime &&
+                    bumperTime <= blackHoleTime) {
+
 
                     double elapsed =
                             Math.max(
@@ -400,6 +669,7 @@ public class TrajectoryCalculator {
                                     time
                             );
 
+
                     remainingTime =
                             Math.max(
                                     0.0,
@@ -408,9 +678,16 @@ public class TrajectoryCalculator {
                                     elapsed
                             );
 
-                    x = bumperCollision.x;
-                    y = bumperCollision.y;
-                    time = bumperCollision.time;
+
+                    x =
+                            bumperCollision.x;
+
+                    y =
+                            bumperCollision.y;
+
+                    time =
+                            bumperCollision.time;
+
 
                     points.add(
                             new TrajectoryPoint(
@@ -420,6 +697,12 @@ public class TrajectoryCalculator {
                             )
                     );
 
+
+                    /*
+                     * Reflection:
+                     *
+                     * v' = v - 2(v dot n)n
+                     */
                     double dot =
                             vx
                             *
@@ -428,6 +711,7 @@ public class TrajectoryCalculator {
                             vy
                             *
                             bumperCollision.normalY;
+
 
                     vx =
                             vx
@@ -438,6 +722,7 @@ public class TrajectoryCalculator {
                             *
                             bumperCollision.normalX;
 
+
                     vy =
                             vy
                             -
@@ -447,33 +732,52 @@ public class TrajectoryCalculator {
                             *
                             bumperCollision.normalY;
 
+
                     x +=
                             bumperCollision.normalX
                             *
                             BUMPER_PUSH_OUT;
+
 
                     y +=
                             bumperCollision.normalY
                             *
                             BUMPER_PUSH_OUT;
 
+
                     lastHitBumper =
                             bumperCollision.bumper;
+
 
                     bumperCooldown =
                             BUMPER_COOLDOWN_STEPS;
 
+
                     bounceCount++;
 
+
                     if (bounceCount > MAX_BOUNCES) {
-                        destroyed = true;
+
+
+                        destroyed =
+                                true;
+
+
                         break;
                     }
+
 
                     continue;
                 }
 
-                if (terrainCollision != null) {
+
+                // =============================================
+                // TERRAIN
+                // =============================================
+
+                if (terrainCollision != null &&
+                    terrainTime <= blackHoleTime) {
+
 
                     points.add(
                             new TrajectoryPoint(
@@ -483,34 +787,68 @@ public class TrajectoryCalculator {
                             )
                     );
 
-                    destroyed = true;
+
+                    destroyed =
+                            true;
+
+
                     break;
                 }
 
-                /*
-                 * No collision during the remaining part of the step.
-                 */
-                x = nextX;
-                y = nextY;
-                time = nextTime;
-                remainingTime = 0.0;
+
+                // =============================================
+                // NO EVENT
+                // =============================================
+
+                x =
+                        nextX;
+
+                y =
+                        nextY;
+
+                time =
+                        nextTime;
+
+
+                remainingTime =
+                        0.0;
             }
+
 
             if (destroyed) {
+
                 break;
             }
+
 
             if (eventsThisStep >= MAX_EVENTS_PER_STEP) {
+
                 break;
             }
 
+
+            // =================================================
+            // BUMPER COOLDOWN
+            // =================================================
+
             if (bumperCooldown > 0) {
+
+
                 bumperCooldown--;
 
+
                 if (bumperCooldown == 0) {
-                    lastHitBumper = null;
+
+
+                    lastHitBumper =
+                            null;
                 }
             }
+
+
+            // =================================================
+            // PORTAL RE-ARM
+            // =================================================
 
             if (lockedPortalPair != null &&
                 isOutsidePortalPair(
@@ -519,172 +857,319 @@ public class TrajectoryCalculator {
                         lockedPortalPair
                 )) {
 
-                lockedPortalPair = null;
+
+                lockedPortalPair =
+                        null;
             }
+
+
+            // =================================================
+            // OUT OF BOUNDS
+            // =================================================
 
             if (x < 0 ||
                 x >= terrain.getWidth() ||
                 y > MAX_SCREEN_Y) {
 
+
                 break;
             }
 
-            /*
-             * Same existing integration model:
-             * acceleration is applied once per full physics step.
-             */
+
+            // =================================================
+            // NORMAL ACCELERATION
+            // =================================================
+
             vx +=
                     windAcceleration
                     *
                     TIME_STEP;
 
+
             vy +=
                     physicsModel.getGravity()
                     *
                     TIME_STEP;
+
+
+            // =================================================
+            // BLACK HOLE GRAVITY
+            // =================================================
+
+            double[] blackHoleAcceleration =
+                    getBlackHoleAcceleration(
+                            x,
+                            y,
+                            blackHoles
+                    );
+
+
+            vx +=
+                    blackHoleAcceleration[0]
+                    *
+                    TIME_STEP;
+
+
+            vy +=
+                    blackHoleAcceleration[1]
+                    *
+                    TIME_STEP;
         }
+
 
         return points;
     }
 
+
     // =========================================================
-    // PORTALS
+    // BLACK HOLE FORCE
     // =========================================================
 
-    private PortalCollision findFirstPortalCollision(
-            double startX,
-            double startY,
-            double startTime,
-            double endX,
-            double endY,
-            double endTime,
-            List<PortalPair> portalPairs,
-            PortalPair lockedPortalPair
+    private double[] getBlackHoleAcceleration(
+            double x,
+            double y,
+            List<BlackHole> blackHoles
     ) {
 
-        PortalCollision best =
-                null;
+        double totalAx =
+                0.0;
 
-        for (PortalPair pair : portalPairs) {
+        double totalAy =
+                0.0;
 
-            if (pair == lockedPortalPair) {
+
+        /*
+         * Mehrere Black Holes:
+         *
+         * Kräfte addieren sich.
+         */
+        for (BlackHole blackHole :
+                blackHoles) {
+
+
+            double dx =
+                    blackHole.getCenterX()
+                    -
+                    x;
+
+
+            double dy =
+                    blackHole.getCenterY()
+                    -
+                    y;
+
+
+            double distanceSquared =
+                    dx * dx
+                    +
+                    dy * dy;
+
+
+            if (distanceSquared
+                    <=
+                EVENT_EPSILON) {
+
+
                 continue;
             }
 
-            PortalCollision orangeHit =
-                    intersectPortal(
-                            startX,
-                            startY,
-                            startTime,
-                            endX,
-                            endY,
-                            endTime,
-                            pair,
-                            pair.getOrangePortal()
+
+            double distance =
+                    Math.sqrt(
+                            distanceSquared
                     );
 
-            PortalCollision blueHit =
-                    intersectPortal(
-                            startX,
-                            startY,
-                            startTime,
-                            endX,
-                            endY,
-                            endTime,
-                            pair,
-                            pair.getBluePortal()
+
+            double influenceRadius =
+                    blackHole.getInfluenceRadius();
+
+
+            if (distance >= influenceRadius) {
+
+                continue;
+            }
+
+
+            /*
+             * 0.0 = äußerster Rand
+             * 1.0 = Zentrum
+             */
+            double normalized =
+                    1.0
+                    -
+                    distance
+                    /
+                    influenceRadius;
+
+
+            double acceleration =
+                    BLACK_HOLE_MAX_ACCELERATION
+                    *
+                    Math.pow(
+                            normalized,
+                            BLACK_HOLE_FORCE_EXPONENT
                     );
 
-            best =
-                    earlierPortalCollision(
-                            best,
-                            orangeHit
-                    );
 
-            best =
-                    earlierPortalCollision(
-                            best,
-                            blueHit
-                    );
+            /*
+             * Normalisierte Richtung zum Center.
+             */
+            double nx =
+                    dx
+                    /
+                    distance;
+
+
+            double ny =
+                    dy
+                    /
+                    distance;
+
+
+            totalAx +=
+                    nx
+                    *
+                    acceleration;
+
+
+            totalAy +=
+                    ny
+                    *
+                    acceleration;
         }
+
+
+        return new double[]{
+                totalAx,
+                totalAy
+        };
+    }
+
+
+    // =========================================================
+    // BLACK HOLE CORE COLLISION
+    // =========================================================
+
+    private BlackHoleCollision findFirstBlackHoleCoreCollision(
+            double startX,
+            double startY,
+            double startTime,
+
+            double endX,
+            double endY,
+            double endTime,
+
+            List<BlackHole> blackHoles
+    ) {
+
+        BlackHoleCollision best =
+                null;
+
+
+        for (BlackHole blackHole :
+                blackHoles) {
+
+
+            BlackHoleCollision collision =
+                    intersectBlackHoleCore(
+                            startX,
+                            startY,
+                            startTime,
+
+                            endX,
+                            endY,
+                            endTime,
+
+                            blackHole
+                    );
+
+
+            if (collision != null &&
+                (
+                        best == null
+                        ||
+                        collision.time
+                                <
+                        best.time
+                )) {
+
+
+                best =
+                        collision;
+            }
+        }
+
 
         return best;
     }
 
-    private PortalCollision earlierPortalCollision(
-            PortalCollision current,
-            PortalCollision candidate
-    ) {
 
-        if (candidate == null) {
-            return current;
-        }
-
-        if (current == null ||
-            candidate.time < current.time) {
-
-            return candidate;
-        }
-
-        return current;
-    }
-
-    /*
-     * Exact line-segment / circle ENTRY intersection.
-     *
-     * We do not merely test trajectory sample points, so a fast shot
-     * cannot skip through a portal between two physics positions.
-     */
-    private PortalCollision intersectPortal(
+    private BlackHoleCollision intersectBlackHoleCore(
             double startX,
             double startY,
             double startTime,
+
             double endX,
             double endY,
             double endTime,
-            PortalPair pair,
-            Portal portal
+
+            BlackHole blackHole
     ) {
 
         /*
-         * If the segment already starts inside this portal, it is not a
-         * fresh "enter" event. This is important for re-trigger rules.
+         * Falls wir bereits im Core starten:
+         * sofort zerstört.
          */
-        if (portal.contains(
+        if (blackHole.containsCore(
                 startX,
                 startY
         )) {
-            return null;
+
+
+            return new BlackHoleCollision(
+                    blackHole,
+                    startX,
+                    startY,
+                    startTime
+            );
         }
+
 
         double dx =
                 endX
                 -
                 startX;
 
+
         double dy =
                 endY
                 -
                 startY;
 
+
         double fx =
                 startX
                 -
-                portal.getCenterX();
+                blackHole.getCenterX();
+
 
         double fy =
                 startY
                 -
-                portal.getCenterY();
+                blackHole.getCenterY();
+
 
         double a =
                 dx * dx
                 +
                 dy * dy;
 
+
         if (a <= EVENT_EPSILON) {
+
             return null;
         }
+
 
         double b =
                 2.0
@@ -695,8 +1180,10 @@ public class TrajectoryCalculator {
                         fy * dy
                 );
 
+
         double radius =
-                portal.getRadius();
+                blackHole.getCoreRadius();
+
 
         double c =
                 fx * fx
@@ -705,19 +1192,28 @@ public class TrajectoryCalculator {
                 -
                 radius * radius;
 
+
         double discriminant =
                 b * b
                 -
-                4.0 * a * c;
+                4.0
+                *
+                a
+                *
+                c;
+
 
         if (discriminant < 0.0) {
+
             return null;
         }
+
 
         double sqrt =
                 Math.sqrt(
                         discriminant
                 );
+
 
         double t1 =
                 (
@@ -727,8 +1223,11 @@ public class TrajectoryCalculator {
                 )
                 /
                 (
-                        2.0 * a
+                        2.0
+                        *
+                        a
                 );
+
 
         double t2 =
                 (
@@ -738,30 +1237,43 @@ public class TrajectoryCalculator {
                 )
                 /
                 (
-                        2.0 * a
+                        2.0
+                        *
+                        a
                 );
+
 
         double hitFraction =
                 Double.POSITIVE_INFINITY;
 
+
         if (t1 >= 0.0 &&
             t1 <= 1.0) {
 
-            hitFraction = t1;
+
+            hitFraction =
+                    t1;
         }
+
 
         if (t2 >= 0.0 &&
             t2 <= 1.0 &&
             t2 < hitFraction) {
 
-            hitFraction = t2;
+
+            hitFraction =
+                    t2;
         }
+
 
         if (!Double.isFinite(
                 hitFraction
         )) {
+
+
             return null;
         }
+
 
         double hitX =
                 startX
@@ -770,12 +1282,14 @@ public class TrajectoryCalculator {
                 *
                 hitFraction;
 
+
         double hitY =
                 startY
                 +
                 dy
                 *
                 hitFraction;
+
 
         double hitTime =
                 startTime
@@ -788,6 +1302,313 @@ public class TrajectoryCalculator {
                 *
                 hitFraction;
 
+
+        return new BlackHoleCollision(
+                blackHole,
+                hitX,
+                hitY,
+                hitTime
+        );
+    }
+
+
+    // =========================================================
+    // PORTALS
+    // =========================================================
+
+    private PortalCollision findFirstPortalCollision(
+            double startX,
+            double startY,
+            double startTime,
+
+            double endX,
+            double endY,
+            double endTime,
+
+            List<PortalPair> portalPairs,
+            PortalPair lockedPortalPair
+    ) {
+
+        PortalCollision best =
+                null;
+
+
+        for (PortalPair pair :
+                portalPairs) {
+
+
+            if (pair == lockedPortalPair) {
+
+                continue;
+            }
+
+
+            PortalCollision orangeHit =
+                    intersectPortal(
+                            startX,
+                            startY,
+                            startTime,
+
+                            endX,
+                            endY,
+                            endTime,
+
+                            pair,
+                            pair.getOrangePortal()
+                    );
+
+
+            PortalCollision blueHit =
+                    intersectPortal(
+                            startX,
+                            startY,
+                            startTime,
+
+                            endX,
+                            endY,
+                            endTime,
+
+                            pair,
+                            pair.getBluePortal()
+                    );
+
+
+            best =
+                    earlierPortalCollision(
+                            best,
+                            orangeHit
+                    );
+
+
+            best =
+                    earlierPortalCollision(
+                            best,
+                            blueHit
+                    );
+        }
+
+
+        return best;
+    }
+
+
+    private PortalCollision earlierPortalCollision(
+            PortalCollision current,
+            PortalCollision candidate
+    ) {
+
+        if (candidate == null) {
+
+            return current;
+        }
+
+
+        if (current == null ||
+            candidate.time < current.time) {
+
+
+            return candidate;
+        }
+
+
+        return current;
+    }
+
+
+    private PortalCollision intersectPortal(
+            double startX,
+            double startY,
+            double startTime,
+
+            double endX,
+            double endY,
+            double endTime,
+
+            PortalPair pair,
+            Portal portal
+    ) {
+
+        /*
+         * Kein Retrigger solange wir bereits im Portal stehen.
+         */
+        if (portal.contains(
+                startX,
+                startY
+        )) {
+
+
+            return null;
+        }
+
+
+        double dx =
+                endX
+                -
+                startX;
+
+
+        double dy =
+                endY
+                -
+                startY;
+
+
+        double fx =
+                startX
+                -
+                portal.getCenterX();
+
+
+        double fy =
+                startY
+                -
+                portal.getCenterY();
+
+
+        double a =
+                dx * dx
+                +
+                dy * dy;
+
+
+        if (a <= EVENT_EPSILON) {
+
+            return null;
+        }
+
+
+        double b =
+                2.0
+                *
+                (
+                        fx * dx
+                        +
+                        fy * dy
+                );
+
+
+        double radius =
+                portal.getRadius();
+
+
+        double c =
+                fx * fx
+                +
+                fy * fy
+                -
+                radius * radius;
+
+
+        double discriminant =
+                b * b
+                -
+                4.0
+                *
+                a
+                *
+                c;
+
+
+        if (discriminant < 0.0) {
+
+            return null;
+        }
+
+
+        double sqrt =
+                Math.sqrt(
+                        discriminant
+                );
+
+
+        double t1 =
+                (
+                        -b
+                        -
+                        sqrt
+                )
+                /
+                (
+                        2.0
+                        *
+                        a
+                );
+
+
+        double t2 =
+                (
+                        -b
+                        +
+                        sqrt
+                )
+                /
+                (
+                        2.0
+                        *
+                        a
+                );
+
+
+        double hitFraction =
+                Double.POSITIVE_INFINITY;
+
+
+        if (t1 >= 0.0 &&
+            t1 <= 1.0) {
+
+
+            hitFraction =
+                    t1;
+        }
+
+
+        if (t2 >= 0.0 &&
+            t2 <= 1.0 &&
+            t2 < hitFraction) {
+
+
+            hitFraction =
+                    t2;
+        }
+
+
+        if (!Double.isFinite(
+                hitFraction
+        )) {
+
+
+            return null;
+        }
+
+
+        double hitX =
+                startX
+                +
+                dx
+                *
+                hitFraction;
+
+
+        double hitY =
+                startY
+                +
+                dy
+                *
+                hitFraction;
+
+
+        double hitTime =
+                startTime
+                +
+                (
+                        endTime
+                        -
+                        startTime
+                )
+                *
+                hitFraction;
+
+
         return new PortalCollision(
                 pair,
                 portal,
@@ -797,6 +1618,7 @@ public class TrajectoryCalculator {
         );
     }
 
+
     private boolean isOutsidePortalPair(
             double x,
             double y,
@@ -804,11 +1626,20 @@ public class TrajectoryCalculator {
     ) {
 
         return !pair.getOrangePortal()
-                        .contains(x, y)
+                        .contains(
+                                x,
+                                y
+                        )
+
                 &&
+
                 !pair.getBluePortal()
-                        .contains(x, y);
+                        .contains(
+                                x,
+                                y
+                        );
     }
+
 
     // =========================================================
     // BUMPERS
@@ -818,21 +1649,35 @@ public class TrajectoryCalculator {
             double startX,
             double startY,
             double startTime,
+
             double endX,
             double endY,
             double endTime,
+
             List<Bumper> bumpers,
+
             Bumper ignoredBumper
     ) {
 
         if (bumpers == null ||
             bumpers.isEmpty()) {
 
+
             return null;
         }
 
-        double dx = endX - startX;
-        double dy = endY - startY;
+
+        double dx =
+                endX
+                -
+                startX;
+
+
+        double dy =
+                endY
+                -
+                startY;
+
 
         double segmentLength =
                 Math.sqrt(
@@ -840,6 +1685,7 @@ public class TrajectoryCalculator {
                         +
                         dy * dy
                 );
+
 
         int samples =
                 Math.max(
@@ -851,24 +1697,33 @@ public class TrajectoryCalculator {
                         )
                 );
 
+
         for (int sample = 1;
              sample <= samples;
              sample++) {
+
 
             double progress =
                     (double) sample
                     /
                     samples;
 
+
             double sampleX =
                     startX
                     +
-                    dx * progress;
+                    dx
+                    *
+                    progress;
+
 
             double sampleY =
                     startY
                     +
-                    dy * progress;
+                    dy
+                    *
+                    progress;
+
 
             double sampleTime =
                     startTime
@@ -881,17 +1736,24 @@ public class TrajectoryCalculator {
                     *
                     progress;
 
-            for (Bumper bumper : bumpers) {
+
+            for (Bumper bumper :
+                    bumpers) {
+
 
                 if (bumper == ignoredBumper) {
+
                     continue;
                 }
 
+
                 BumperCollision collision;
+
 
                 if (bumper.getType()
                         ==
                     Bumper.BumperType.LINE) {
+
 
                     collision =
                             checkLineBumper(
@@ -901,7 +1763,9 @@ public class TrajectoryCalculator {
                                     bumper
                             );
 
+
                 } else {
+
 
                     collision =
                             checkCircleBumper(
@@ -912,14 +1776,18 @@ public class TrajectoryCalculator {
                             );
                 }
 
+
                 if (collision != null) {
+
                     return collision;
                 }
             }
         }
 
+
         return null;
     }
+
 
     private BumperCollision checkLineBumper(
             double x,
@@ -928,23 +1796,43 @@ public class TrajectoryCalculator {
             Bumper bumper
     ) {
 
-        double ax = bumper.getStartX();
-        double ay = bumper.getStartY();
+        double ax =
+                bumper.getStartX();
 
-        double bx = bumper.getEndX();
-        double by = bumper.getEndY();
+        double ay =
+                bumper.getStartY();
 
-        double lineX = bx - ax;
-        double lineY = by - ay;
+
+        double bx =
+                bumper.getEndX();
+
+        double by =
+                bumper.getEndY();
+
+
+        double lineX =
+                bx
+                -
+                ax;
+
+
+        double lineY =
+                by
+                -
+                ay;
+
 
         double lengthSquared =
                 lineX * lineX
                 +
                 lineY * lineY;
 
+
         if (lengthSquared < EVENT_EPSILON) {
+
             return null;
         }
+
 
         double projection =
                 (
@@ -955,6 +1843,7 @@ public class TrajectoryCalculator {
                 /
                 lengthSquared;
 
+
         projection =
                 Math.max(
                         0.0,
@@ -964,12 +1853,14 @@ public class TrajectoryCalculator {
                         )
                 );
 
+
         double closestX =
                 ax
                 +
                 lineX
                 *
                 projection;
+
 
         double closestY =
                 ay
@@ -978,20 +1869,24 @@ public class TrajectoryCalculator {
                 *
                 projection;
 
+
         double diffX =
                 x
                 -
                 closestX;
+
 
         double diffY =
                 y
                 -
                 closestY;
 
+
         double distanceSquared =
                 diffX * diffX
                 +
                 diffY * diffY;
+
 
         if (distanceSquared
                 >
@@ -999,46 +1894,58 @@ public class TrajectoryCalculator {
             *
             LINE_BUMPER_RADIUS) {
 
+
             return null;
         }
 
+
         double normalX;
+
         double normalY;
+
 
         double distance =
                 Math.sqrt(
                         distanceSquared
                 );
 
+
         if (distance > EVENT_EPSILON) {
+
 
             normalX =
                     diffX
                     /
                     distance;
 
+
             normalY =
                     diffY
                     /
                     distance;
 
+
         } else {
+
 
             double lineLength =
                     Math.sqrt(
                             lengthSquared
                     );
 
+
             normalX =
                     -lineY
                     /
                     lineLength;
+
 
             normalY =
                     lineX
                     /
                     lineLength;
         }
+
 
         return new BumperCollision(
                 bumper,
@@ -1049,6 +1956,7 @@ public class TrajectoryCalculator {
                 normalY
         );
     }
+
 
     private BumperCollision checkCircleBumper(
             double x,
@@ -1062,43 +1970,70 @@ public class TrajectoryCalculator {
                 +
                 CIRCLE_BUMPER_EXTRA_RADIUS;
 
+
         double dx =
                 x
                 -
                 bumper.getCenterX();
+
 
         double dy =
                 y
                 -
                 bumper.getCenterY();
 
+
         double distanceSquared =
                 dx * dx
                 +
                 dy * dy;
 
-        if (distanceSquared > radius * radius) {
+
+        if (distanceSquared
+                >
+            radius * radius) {
+
+
             return null;
         }
+
 
         double distance =
                 Math.sqrt(
                         distanceSquared
                 );
 
+
         double normalX;
+
         double normalY;
+
 
         if (distance > EVENT_EPSILON) {
 
-            normalX = dx / distance;
-            normalY = dy / distance;
+
+            normalX =
+                    dx
+                    /
+                    distance;
+
+
+            normalY =
+                    dy
+                    /
+                    distance;
+
 
         } else {
 
-            normalX = 0.0;
-            normalY = -1.0;
+
+            normalX =
+                    0.0;
+
+            normalY =
+                    -1.0;
         }
+
 
         return new BumperCollision(
                 bumper,
@@ -1110,6 +2045,7 @@ public class TrajectoryCalculator {
         );
     }
 
+
     // =========================================================
     // TERRAIN
     // =========================================================
@@ -1118,15 +2054,26 @@ public class TrajectoryCalculator {
             double startX,
             double startY,
             double startTime,
+
             double endX,
             double endY,
             double endTime,
+
             PlayerState shooter,
             TerrainProfile terrain
     ) {
 
-        double dx = endX - startX;
-        double dy = endY - startY;
+        double dx =
+                endX
+                -
+                startX;
+
+
+        double dy =
+                endY
+                -
+                startY;
+
 
         double segmentLength =
                 Math.sqrt(
@@ -1134,6 +2081,7 @@ public class TrajectoryCalculator {
                         +
                         dy * dy
                 );
+
 
         int samples =
                 Math.max(
@@ -1145,24 +2093,33 @@ public class TrajectoryCalculator {
                         )
                 );
 
+
         for (int sample = 1;
              sample <= samples;
              sample++) {
+
 
             double progress =
                     (double) sample
                     /
                     samples;
 
+
             double sampleX =
                     startX
                     +
-                    dx * progress;
+                    dx
+                    *
+                    progress;
+
 
             double sampleY =
                     startY
                     +
-                    dy * progress;
+                    dy
+                    *
+                    progress;
+
 
             double sampleTime =
                     startTime
@@ -1175,25 +2132,32 @@ public class TrajectoryCalculator {
                     *
                     progress;
 
+
             if (sampleX < 0 ||
                 sampleX >= terrain.getWidth()) {
 
+
                 continue;
             }
+
 
             if (isInsideShooterIgnoreArea(
                     sampleX,
                     sampleY,
                     shooter
             )) {
+
+
                 continue;
             }
+
 
             if (hitsTerrain(
                     sampleX,
                     sampleY,
                     terrain
             )) {
+
 
                 return new TerrainCollision(
                         sampleX,
@@ -1203,8 +2167,10 @@ public class TrajectoryCalculator {
             }
         }
 
+
         return null;
     }
+
 
     private boolean isInsideShooterIgnoreArea(
             double x,
@@ -1217,10 +2183,12 @@ public class TrajectoryCalculator {
                 -
                 shooter.getX();
 
+
         double dy =
                 y
                 -
                 shooter.getY();
+
 
         return dx * dx
                 +
@@ -1231,6 +2199,7 @@ public class TrajectoryCalculator {
                 SHOOTER_IGNORE_RADIUS;
     }
 
+
     private boolean hitsTerrain(
             double x,
             double y,
@@ -1238,23 +2207,70 @@ public class TrajectoryCalculator {
     ) {
 
         int terrainX =
-                (int) Math.floor(x);
+                (int) Math.floor(
+                        x
+                );
+
 
         if (terrainX < 0 ||
-            terrainX >= terrain.getWidth() ||
-            !terrain.hasTerrainAt(terrainX)) {
+            terrainX >= terrain.getWidth()) {
+
 
             return false;
         }
 
+
+        if (!terrain.hasTerrainAt(
+                terrainX
+        )) {
+
+
+            return false;
+        }
+
+
         return y
                 >=
-                terrain.getY(terrainX);
+                terrain.getY(
+                        terrainX
+                );
     }
 
+
     // =========================================================
-    // INTERNAL COLLISION TYPES
+    // INTERNAL COLLISION CLASSES
     // =========================================================
+
+    private static class BlackHoleCollision {
+
+        private final BlackHole blackHole;
+
+        private final double x;
+        private final double y;
+        private final double time;
+
+
+        private BlackHoleCollision(
+                BlackHole blackHole,
+                double x,
+                double y,
+                double time
+        ) {
+
+            this.blackHole =
+                    blackHole;
+
+            this.x =
+                    x;
+
+            this.y =
+                    y;
+
+            this.time =
+                    time;
+        }
+    }
+
 
     private static class PortalCollision {
 
@@ -1265,6 +2281,7 @@ public class TrajectoryCalculator {
         private final double y;
         private final double time;
 
+
         private PortalCollision(
                 PortalPair pair,
                 Portal portal,
@@ -1273,13 +2290,23 @@ public class TrajectoryCalculator {
                 double time
         ) {
 
-            this.pair = pair;
-            this.portal = portal;
-            this.x = x;
-            this.y = y;
-            this.time = time;
+            this.pair =
+                    pair;
+
+            this.portal =
+                    portal;
+
+            this.x =
+                    x;
+
+            this.y =
+                    y;
+
+            this.time =
+                    time;
         }
     }
+
 
     private static class BumperCollision {
 
@@ -1292,6 +2319,7 @@ public class TrajectoryCalculator {
         private final double normalX;
         private final double normalY;
 
+
         private BumperCollision(
                 Bumper bumper,
                 double x,
@@ -1301,14 +2329,26 @@ public class TrajectoryCalculator {
                 double normalY
         ) {
 
-            this.bumper = bumper;
-            this.x = x;
-            this.y = y;
-            this.time = time;
-            this.normalX = normalX;
-            this.normalY = normalY;
+            this.bumper =
+                    bumper;
+
+            this.x =
+                    x;
+
+            this.y =
+                    y;
+
+            this.time =
+                    time;
+
+            this.normalX =
+                    normalX;
+
+            this.normalY =
+                    normalY;
         }
     }
+
 
     private static class TerrainCollision {
 
@@ -1316,15 +2356,21 @@ public class TrajectoryCalculator {
         private final double y;
         private final double time;
 
+
         private TerrainCollision(
                 double x,
                 double y,
                 double time
         ) {
 
-            this.x = x;
-            this.y = y;
-            this.time = time;
+            this.x =
+                    x;
+
+            this.y =
+                    y;
+
+            this.time =
+                    time;
         }
     }
 }

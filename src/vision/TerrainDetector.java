@@ -1,5 +1,6 @@
 package vision;
 
+import model.BlackHole;
 import model.Portal;
 import model.PortalPair;
 import model.TerrainProfile;
@@ -14,14 +15,27 @@ import java.util.List;
 public class TerrainDetector {
 
     /*
-     * Blue portals have a strong cyan glow that otherwise satisfies
-     * the terrain color thresholds.
-     *
-     * We therefore ignore the whole visible portal region while
-     * searching for the terrain surface.
+     * Portal-Glow darf nicht als Terrain gelten.
      */
     private static final double PORTAL_EXCLUSION_PADDING =
             28.0;
+
+
+    /*
+     * Beim Black Hole maskieren wir NICHT den kompletten
+     * Influence-Radius.
+     *
+     * Sonst würden wir echtes Terrain unter einem Black Hole
+     * wegwerfen.
+     *
+     * Wir maskieren nur den sichtbaren Swirl-/Particle-Bereich.
+     */
+    private static final double BLACK_HOLE_VISUAL_FACTOR =
+            4.5;
+
+
+    private static final double BLACK_HOLE_VISUAL_PADDING =
+            12.0;
 
 
     // =========================================================
@@ -34,29 +48,54 @@ public class TerrainDetector {
 
         return detectTerrain(
                 image,
+                Collections.emptyList(),
                 Collections.emptyList()
         );
     }
 
-
-    // =========================================================
-    // TERRAIN DETECTION WITH PORTAL MASK
-    // =========================================================
 
     public TerrainProfile detectTerrain(
             BufferedImage image,
             List<PortalPair> portalPairs
     ) {
 
+        return detectTerrain(
+                image,
+                portalPairs,
+                Collections.emptyList()
+        );
+    }
+
+
+    // =========================================================
+    // FULL TERRAIN DETECTION
+    // =========================================================
+
+    public TerrainProfile detectTerrain(
+            BufferedImage image,
+            List<PortalPair> portalPairs,
+            List<BlackHole> blackHoles
+    ) {
+
         if (portalPairs == null) {
+
 
             portalPairs =
                     Collections.emptyList();
         }
 
 
+        if (blackHoles == null) {
+
+
+            blackHoles =
+                    Collections.emptyList();
+        }
+
+
         int width =
                 image.getWidth();
+
 
         int height =
                 image.getHeight();
@@ -68,9 +107,6 @@ public class TerrainDetector {
                 );
 
 
-        /*
-         * Bottom HUD ignored.
-         */
         int maxY =
                 (int) (
                         height
@@ -79,9 +115,6 @@ public class TerrainDetector {
                 );
 
 
-        /*
-         * Upper HUD ignored.
-         */
         int minY =
                 150;
 
@@ -97,7 +130,8 @@ public class TerrainDetector {
                             x,
                             minY,
                             maxY,
-                            portalPairs
+                            portalPairs,
+                            blackHoles
                     );
 
 
@@ -126,25 +160,22 @@ public class TerrainDetector {
             int x,
             int minY,
             int maxY,
-            List<PortalPair> portalPairs
+            List<PortalPair> portalPairs,
+            List<BlackHole> blackHoles
     ) {
 
-        /*
-         * Search from top to bottom.
-         *
-         * The first sufficiently terrain-like pixel is considered the
-         * surface, unless it belongs to a portal exclusion region.
-         */
         for (int y = minY;
              y < maxY;
              y++) {
 
 
-            if (isInsidePortalExclusion(
+            if (isInsideVisualExclusion(
                     x,
                     y,
-                    portalPairs
+                    portalPairs,
+                    blackHoles
             )) {
+
 
                 continue;
             }
@@ -158,17 +189,13 @@ public class TerrainDetector {
             )) {
 
 
-                /*
-                 * A single pixel can be an effect.
-                 *
-                 * Require multiple terrain pixels below it as well.
-                 */
                 if (hasTerrainBelow(
                         image,
                         x,
                         y,
                         maxY,
-                        portalPairs
+                        portalPairs,
+                        blackHoles
                 )) {
 
 
@@ -191,11 +218,13 @@ public class TerrainDetector {
             int x,
             int y,
             int maxY,
-            List<PortalPair> portalPairs
+            List<PortalPair> portalPairs,
+            List<BlackHole> blackHoles
     ) {
 
         int requiredPixels =
                 4;
+
 
         int found =
                 0;
@@ -218,11 +247,13 @@ public class TerrainDetector {
             }
 
 
-            if (isInsidePortalExclusion(
+            if (isInsideVisualExclusion(
                     x,
                     checkY,
-                    portalPairs
+                    portalPairs,
+                    blackHoles
             )) {
+
 
                 continue;
             }
@@ -248,6 +279,36 @@ public class TerrainDetector {
 
 
     // =========================================================
+    // VISUAL EXCLUSION
+    // =========================================================
+
+    private boolean isInsideVisualExclusion(
+            double x,
+            double y,
+            List<PortalPair> portalPairs,
+            List<BlackHole> blackHoles
+    ) {
+
+        if (isInsidePortalExclusion(
+                x,
+                y,
+                portalPairs
+        )) {
+
+
+            return true;
+        }
+
+
+        return isInsideBlackHoleExclusion(
+                x,
+                y,
+                blackHoles
+        );
+    }
+
+
+    // =========================================================
     // PORTAL MASK
     // =========================================================
 
@@ -267,6 +328,7 @@ public class TerrainDetector {
                     pair.getOrangePortal()
             )) {
 
+
                 return true;
             }
 
@@ -276,6 +338,7 @@ public class TerrainDetector {
                     y,
                     pair.getBluePortal()
             )) {
+
 
                 return true;
             }
@@ -325,6 +388,68 @@ public class TerrainDetector {
 
 
     // =========================================================
+    // BLACK HOLE MASK
+    // =========================================================
+
+    private boolean isInsideBlackHoleExclusion(
+            double x,
+            double y,
+            List<BlackHole> blackHoles
+    ) {
+
+        for (BlackHole blackHole :
+                blackHoles) {
+
+
+            double dx =
+                    x
+                    -
+                    blackHole.getCenterX();
+
+
+            double dy =
+                    y
+                    -
+                    blackHole.getCenterY();
+
+
+            double visualRadius =
+                    blackHole.getCoreRadius()
+                    *
+                    BLACK_HOLE_VISUAL_FACTOR
+                    +
+                    BLACK_HOLE_VISUAL_PADDING;
+
+
+            /*
+             * Niemals größer als der Influence-Bereich.
+             */
+            visualRadius =
+                    Math.min(
+                            visualRadius,
+                            blackHole.getInfluenceRadius()
+                    );
+
+
+            if (dx * dx
+                    +
+                dy * dy
+                    <=
+                visualRadius
+                *
+                visualRadius) {
+
+
+                return true;
+            }
+        }
+
+
+        return false;
+    }
+
+
+    // =========================================================
     // COLOR
     // =========================================================
 
@@ -341,16 +466,15 @@ public class TerrainDetector {
         int r =
                 color.getRed();
 
+
         int g =
                 color.getGreen();
+
 
         int b =
                 color.getBlue();
 
 
-        /*
-         * Existing ShellShock terrain baseline.
-         */
         return b >= 110
                 &&
                 g >= 75
@@ -362,7 +486,7 @@ public class TerrainDetector {
 
 
     // =========================================================
-    // SMOOTHING
+    // SMOOTH
     // =========================================================
 
     private void smoothTerrain(
@@ -389,6 +513,7 @@ public class TerrainDetector {
             int total =
                     0;
 
+
             int count =
                     0;
 
@@ -407,6 +532,7 @@ public class TerrainDetector {
                 if (nx < 0 ||
                     nx >= width) {
 
+
                     continue;
                 }
 
@@ -419,8 +545,10 @@ public class TerrainDetector {
 
                 if (y >= 0) {
 
+
                     total +=
                             y;
+
 
                     count++;
                 }
