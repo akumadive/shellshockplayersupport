@@ -149,6 +149,40 @@ public class ShellShockAssistant {
             );
 
             // =====================================================
+            // PORTALS
+            // =====================================================
+
+            /*
+             * Portal detection MUST happen before terrain detection.
+             *
+             * The blue portal glow is cyan/blue enough to satisfy the
+             * normal terrain color thresholds. The resulting portal
+             * regions are therefore passed to TerrainDetector as masks.
+             */
+            PortalDetector portalDetector =
+                    new PortalDetector();
+
+            List<PortalPair> portalPairs =
+                    portalDetector.detectPortalPairs(
+                            screenshot
+                    );
+
+            System.out.println();
+            System.out.println("==============================");
+            System.out.println("PORTALS");
+            System.out.println("==============================");
+            System.out.println("Paare gefunden: " + portalPairs.size());
+
+            for (PortalPair pair :
+                    portalPairs) {
+
+                System.out.println();
+                System.out.println("PAIR " + pair.getId());
+                System.out.println("Orange: " + pair.getOrangePortal());
+                System.out.println("Blue:   " + pair.getBluePortal());
+            }
+
+            // =====================================================
             // TERRAIN
             // =====================================================
 
@@ -157,7 +191,8 @@ public class ShellShockAssistant {
 
             TerrainProfile terrain =
                     terrainDetector.detectTerrain(
-                            screenshot
+                            screenshot,
+                            portalPairs
                     );
 
             BufferedImage terrainDebug =
@@ -216,7 +251,8 @@ public class ShellShockAssistant {
 
             List<DamageMultiplier> damageMultipliers =
                     damageMultiplierDetector.detect(
-                            screenshot
+                            screenshot,
+                            players
                     );
 
             DamageMultiplierDebugRenderer damageMultiplierDebugRenderer =

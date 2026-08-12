@@ -1,35 +1,28 @@
 package vision;
 
 import model.DamageMultiplier;
+import model.PlayerState;
 
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Queue;
 
 
 public class DamageMultiplierDetector {
 
-    /*
-     * Unteres HUD nicht untersuchen.
-     */
     private static final double MAX_Y_FACTOR =
             0.78;
 
 
-    /*
-     * Einzelne rote UI-Pixel / Tankpixel ignorieren.
-     */
     private static final int MIN_PIXELS =
             90;
 
 
-    /*
-     * Damage-Buffs sind ungefähr kreisförmig.
-     */
     private static final int MIN_DIAMETER =
             24;
 
@@ -37,9 +30,6 @@ public class DamageMultiplierDetector {
             120;
 
 
-    /*
-     * Breite und Höhe sollten ähnlich sein.
-     */
     private static final double MIN_ASPECT_RATIO =
             0.65;
 
@@ -47,33 +37,55 @@ public class DamageMultiplierDetector {
             1.55;
 
 
-    /*
-     * Connected Component muss einen vernünftigen
-     * Anteil ihrer Bounding Box ausfüllen.
-     *
-     * Damit werden z.B. dünne rote Texte /
-     * Spieleranzeigen aussortiert.
-     */
     private static final double MIN_FILL_RATIO =
             0.18;
 
 
-    /*
-     * Erste Näherung für 1920x1080.
-     *
-     * X3 ist deutlich kleiner als X2.
-     *
-     * Falls wir anhand deines Debugbilds sehen,
-     * dass die reale Grenze z.B. bei 42 statt 48
-     * Pixel liegt, ändern wir genau diesen Wert.
-     */
     private static final double X3_MAX_DIAMETER_FACTOR =
             0.045;
 
 
+    /*
+     * Enemy/self sprites and their red/green markers must never be
+     * interpreted as a damage multiplier.
+     *
+     * The false X3 in the portal test was centered essentially exactly
+     * on the detected enemy.
+     */
+    private static final double PLAYER_REJECTION_RADIUS =
+            42.0;
+
+
+    // =========================================================
+    // OLD API
+    // =========================================================
+
     public List<DamageMultiplier> detect(
             BufferedImage image
     ) {
+
+        return detect(
+                image,
+                Collections.emptyList()
+        );
+    }
+
+
+    // =========================================================
+    // DETECT WITH PLAYER REJECTION
+    // =========================================================
+
+    public List<DamageMultiplier> detect(
+            BufferedImage image,
+            List<PlayerState> players
+    ) {
+
+        if (players == null) {
+
+            players =
+                    Collections.emptyList();
+        }
+
 
         int width =
                 image.getWidth();
@@ -146,17 +158,76 @@ public class DamageMultiplierDetector {
                         );
 
 
-                if (multiplier != null) {
+                if (multiplier == null) {
 
-                    result.add(
-                            multiplier
-                    );
+                    continue;
                 }
+
+
+                if (isNearPlayer(
+                        multiplier,
+                        players
+                )) {
+
+                    continue;
+                }
+
+
+                result.add(
+                        multiplier
+                );
             }
         }
 
 
         return result;
+    }
+
+
+    // =========================================================
+    // PLAYER REJECTION
+    // =========================================================
+
+    private boolean isNearPlayer(
+            DamageMultiplier multiplier,
+            List<PlayerState> players
+    ) {
+
+        for (PlayerState player :
+                players) {
+
+
+            double dx =
+                    multiplier.getCenterX()
+                    -
+                    player.getX();
+
+
+            double dy =
+                    multiplier.getCenterY()
+                    -
+                    player.getY();
+
+
+            double distanceSquared =
+                    dx * dx
+                    +
+                    dy * dy;
+
+
+            if (distanceSquared
+                    <=
+                PLAYER_REJECTION_RADIUS
+                *
+                PLAYER_REJECTION_RADIUS) {
+
+
+                return true;
+            }
+        }
+
+
+        return false;
     }
 
 
@@ -251,12 +322,6 @@ public class DamageMultiplierDetector {
                 2.0;
 
 
-        /*
-         * Mittel aus Breite/Höhe.
-         *
-         * Durch Glow ist die Bounding Box nicht
-         * perfekt kreisförmig.
-         */
         double diameter =
                 (
                         width
@@ -318,12 +383,9 @@ public class DamageMultiplierDetector {
 
     private Component floodFill(
             BufferedImage image,
-
             int startX,
             int startY,
-
             int maxY,
-
             boolean[][] visited
     ) {
 
@@ -366,12 +428,6 @@ public class DamageMultiplierDetector {
             );
 
 
-            /*
-             * 8er-Nachbarschaft.
-             *
-             * Glow / Anti-Aliasing kann diagonal
-             * verbunden sein.
-             */
             for (int offsetY = -1;
                  offsetY <= 1;
                  offsetY++) {
@@ -391,12 +447,9 @@ public class DamageMultiplierDetector {
 
                     addNeighbor(
                             image,
-
                             x + offsetX,
                             y + offsetY,
-
                             maxY,
-
                             visited,
                             queue
                     );
@@ -411,14 +464,10 @@ public class DamageMultiplierDetector {
 
     private void addNeighbor(
             BufferedImage image,
-
             int x,
             int y,
-
             int maxY,
-
             boolean[][] visited,
-
             Queue<int[]> queue
     ) {
 
@@ -468,7 +517,9 @@ public class DamageMultiplierDetector {
     ) {
 
         Color color =
-                new Color(rgb);
+                new Color(
+                        rgb
+                );
 
 
         int r =
@@ -481,12 +532,6 @@ public class DamageMultiplierDetector {
                 color.getBlue();
 
 
-        /*
-         * X2/X3 sind rot mit rotem/orangefarbenem Glow.
-         *
-         * Weißer Text "X2 / X3" muss nicht zur Komponente
-         * gehören. Uns reicht der rote Körper.
-         */
         boolean redStrong =
                 r >= 105;
 
