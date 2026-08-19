@@ -29,14 +29,11 @@ import java.util.List;
 public class BlackHoleCalibrationTest {
 
     // =========================================================
-    // TEST SHOT
+    // REFERENCE SHOT
     // =========================================================
 
     /*
-     * Genau dein echter Vergleichsschuss:
-     *
-     * Power 55
-     * Angle 33
+     * Dein echter Referenzschuss.
      */
     private static final double TEST_POWER =
             55.0;
@@ -46,70 +43,78 @@ public class BlackHoleCalibrationTest {
 
 
     // =========================================================
-    // PHYSICS
+    // SIMULATION
     // =========================================================
 
-    /*
-     * Muss mit dem normalen Calculator übereinstimmen.
-     */
     private static final double TIME_STEP =
             0.05;
-
 
     private static final int MAX_STEPS =
             2500;
 
 
     /*
-     * Noch NICHT kalibriert.
+     * Wir vergleichen diesmal NICHT verschiedene Exponenten
+     * des alten Modells.
      *
-     * Wir testen mehrere Strength/Exponent-Kombinationen
-     * gleichzeitig.
+     * Stattdessen:
+     *
+     * LINEAR:
+     * alter S20-Test als Referenz
+     *
+     * BELL:
+     * neue Kraftkurve
+     *
+     *   Außenrand -> 0
+     *   mittlerer Bereich -> maximale Kraft
+     *   Richtung Kern -> wieder schwächer
+     *
+     * Der schwarze Core bleibt trotzdem tödlich.
      */
-private static final CalibrationVariant[] VARIANTS = {
+    private static final CalibrationVariant[] VARIANTS = {
 
-        new CalibrationVariant(
-                "S16 E1.0",
-                16.0,
-                1.0,
-                Color.WHITE
-        ),
+            new CalibrationVariant(
+                    "OLD S20",
+                    ForceModel.OLD_LINEAR,
+                    20.0,
+                    Color.WHITE
+            ),
 
-        new CalibrationVariant(
-                "S18 E1.0",
-                18.0,
-                1.0,
-                Color.YELLOW
-        ),
+            new CalibrationVariant(
+                    "BELL S15",
+                    ForceModel.BELL,
+                    15.0,
+                    Color.YELLOW
+            ),
 
-        new CalibrationVariant(
-                "S20 E1.0",
-                20.0,
-                1.0,
-                Color.ORANGE
-        ),
+            new CalibrationVariant(
+                    "BELL S20",
+                    ForceModel.BELL,
+                    20.0,
+                    Color.ORANGE
+            ),
 
-        new CalibrationVariant(
-                "S20 E1.25",
-                20.0,
-                1.25,
-                Color.CYAN
-        ),
+            new CalibrationVariant(
+                    "BELL S25",
+                    ForceModel.BELL,
+                    25.0,
+                    Color.CYAN
+            ),
 
-        new CalibrationVariant(
-                "S20 E1.5",
-                20.0,
-                1.5,
-                Color.GREEN
-        ),
+            new CalibrationVariant(
+                    "BELL S30",
+                    ForceModel.BELL,
+                    30.0,
+                    Color.GREEN
+            ),
 
-        new CalibrationVariant(
-                "S24 E1.5",
-                24.0,
-                1.5,
-                Color.MAGENTA
-        )
-};;
+            new CalibrationVariant(
+                    "BELL S40",
+                    ForceModel.BELL,
+                    40.0,
+                    Color.MAGENTA
+            )
+    };
 
 
     public static void main(String[] args) {
@@ -118,7 +123,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             // =====================================================
-            // SCREENSHOT
+            // CAPTURE
             // =====================================================
 
             CaptureRegion region =
@@ -141,7 +146,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             // =====================================================
-            // SELF
+            // PLAYERS
             // =====================================================
 
             PlayerDetector playerDetector =
@@ -169,7 +174,6 @@ private static final CalibrationVariant[] VARIANTS = {
 
                     self =
                             player;
-
 
                     break;
                 }
@@ -211,7 +215,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             System.out.println(
-                    "BLACK HOLE CALIBRATION"
+                    "BLACK HOLE CALIBRATION V2"
             );
 
 
@@ -232,11 +236,11 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             System.out.println(
-                    "Test Shot: Power="
+                    "Power: "
                     +
                     TEST_POWER
                     +
-                    " Angle="
+                    " Angle: "
                     +
                     TEST_ANGLE
             );
@@ -260,16 +264,12 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             // =====================================================
-            // PHYSICS MODEL
+            // PHYSICS
             // =====================================================
 
             PhysicsModel physicsModel =
                     new PhysicsModel();
 
-
-            // =====================================================
-            // SIMULATE ALL VARIANTS
-            // =====================================================
 
             List<CalibrationResult> results =
                     new ArrayList<>();
@@ -296,9 +296,6 @@ private static final CalibrationVariant[] VARIANTS = {
                 );
 
 
-                System.out.println();
-
-
                 System.out.println(
                         variant.name
                         +
@@ -312,7 +309,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             // =====================================================
-            // DEBUG IMAGE
+            // DRAW
             // =====================================================
 
             BufferedImage debug =
@@ -325,7 +322,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
             ImageUtils.saveImage(
                     debug,
-                    "data/screenshots/black_hole_calibration.png"
+                    "data/screenshots/black_hole_calibration_v2.png"
             );
 
 
@@ -333,7 +330,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             System.out.println(
-                    "black_hole_calibration.png gespeichert."
+                    "black_hole_calibration_v2.png gespeichert."
             );
 
 
@@ -346,7 +343,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
     // =========================================================
-    // SIMULATION
+    // SIMULATE
     // =========================================================
 
     private static List<TrajectoryPoint> simulate(
@@ -415,7 +412,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             // =================================================
-            // CORE HIT
+            // ALREADY INSIDE CORE
             // =================================================
 
             if (isInsideAnyCore(
@@ -430,16 +427,15 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             // =================================================
-            // BLACK HOLE ACCELERATION
+            // BLACK HOLE FORCE
             // =================================================
 
-            double[] acceleration =
+            double[] blackHoleAcceleration =
                     calculateBlackHoleAcceleration(
                             x,
                             y,
                             blackHoles,
-                            variant.strength,
-                            variant.exponent
+                            variant
                     );
 
 
@@ -454,23 +450,23 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             // =================================================
-            // BLACK HOLE FORCE
+            // BLACK HOLE ACCELERATION
             // =================================================
 
             vx +=
-                    acceleration[0]
+                    blackHoleAcceleration[0]
                     *
                     TIME_STEP;
 
 
             vy +=
-                    acceleration[1]
+                    blackHoleAcceleration[1]
                     *
                     TIME_STEP;
 
 
             // =================================================
-            // POSITION
+            // NEXT POSITION
             // =================================================
 
             double nextX =
@@ -489,13 +485,10 @@ private static final CalibrationVariant[] VARIANTS = {
                     TIME_STEP;
 
 
-            /*
-             * Exakte Segment/Core-Prüfung.
-             *
-             * Sonst könnte ein schneller Schuss zwischen
-             * zwei Simulationspunkten durch den schwarzen
-             * Kern springen.
-             */
+            // =================================================
+            // CORE SEGMENT COLLISION
+            // =================================================
+
             CoreCollision coreCollision =
                     findCoreCollision(
                             x,
@@ -515,6 +508,7 @@ private static final CalibrationVariant[] VARIANTS = {
                         new TrajectoryPoint(
                                 coreCollision.x,
                                 coreCollision.y,
+
                                 time
                                 +
                                 TIME_STEP
@@ -541,13 +535,13 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             // =================================================
-            // SCREEN BOUNDS
+            // DEBUG BOUNDS
             // =================================================
 
-            if (x < -200 ||
-                x > 2120 ||
-                y < -500 ||
-                y > 1200) {
+            if (x < -300 ||
+                x > 2300 ||
+                y < -600 ||
+                y > 1300) {
 
 
                 break;
@@ -567,8 +561,7 @@ private static final CalibrationVariant[] VARIANTS = {
             double x,
             double y,
             List<BlackHole> blackHoles,
-            double strength,
-            double exponent
+            CalibrationVariant variant
     ) {
 
         double totalAx =
@@ -601,7 +594,10 @@ private static final CalibrationVariant[] VARIANTS = {
                     dy * dy;
 
 
-            if (distanceSquared <= 0.000001) {
+            if (distanceSquared
+                    <=
+                0.000001) {
+
 
                 continue;
             }
@@ -626,27 +622,109 @@ private static final CalibrationVariant[] VARIANTS = {
             }
 
 
-            /*
-             * 0 am äußeren Rand
-             * 1 am Center
-             */
-            double normalized =
-                    1.0
-                    -
-                    distance
-                    /
-                    influenceRadius;
+            double forceFactor;
+
+
+            if (variant.forceModel
+                    ==
+                ForceModel.OLD_LINEAR) {
+
+
+                /*
+                 * ALTER ANSATZ:
+                 *
+                 * Rand   -> 0
+                 * Center -> 1
+                 *
+                 * Genau dieser Ansatz hat bei S20
+                 * den zu engen Orbit erzeugt.
+                 */
+                double normalized =
+                        1.0
+                        -
+                        distance
+                        /
+                        influenceRadius;
+
+
+                forceFactor =
+                        normalized;
+
+
+            } else {
+
+
+                /*
+                 * NEUER BELL-ANSATZ
+                 *
+                 * q:
+                 *
+                 * 0 = Center
+                 * 1 = Influence-Rand
+                 *
+                 *
+                 *       force
+                 *
+                 *         ^
+                 *         |       /\
+                 *         |      /  \
+                 *         |     /    \
+                 *         |____/______\____> q
+                 *             0.5      1
+                 *
+                 *
+                 * Formel:
+                 *
+                 * 4 * q * (1-q)
+                 *
+                 *
+                 * q=1.0 -> 0
+                 * q=0.5 -> 1
+                 * q=0.0 -> 0
+                 *
+                 *
+                 * Dadurch steigt die Kraft beim Eintritt
+                 * zunächst an, explodiert aber NICHT mehr
+                 * Richtung Core.
+                 */
+                double q =
+                        distance
+                        /
+                        influenceRadius;
+
+
+                forceFactor =
+                        4.0
+                        *
+                        q
+                        *
+                        (
+                                1.0
+                                -
+                                q
+                        );
+
+
+                forceFactor =
+                        Math.max(
+                                0.0,
+                                Math.min(
+                                        1.0,
+                                        forceFactor
+                                )
+                        );
+            }
 
 
             double acceleration =
-                    strength
+                    variant.strength
                     *
-                    Math.pow(
-                            normalized,
-                            exponent
-                    );
+                    forceFactor;
 
 
+            /*
+             * Richtung bleibt radial zum Mittelpunkt.
+             */
             double nx =
                     dx
                     /
@@ -680,7 +758,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
     // =========================================================
-    // CORE TEST
+    // CORE
     // =========================================================
 
     private static boolean isInsideAnyCore(
@@ -709,7 +787,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
     // =========================================================
-    // SEGMENT / CORE
+    // CORE COLLISION
     // =========================================================
 
     private static CoreCollision findCoreCollision(
@@ -917,6 +995,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
         return new CoreCollision(
+
                 startX
                 +
                 dx
@@ -971,7 +1050,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
         // =====================================================
-        // BLACK HOLE RADII
+        // BLACK HOLES
         // =====================================================
 
         graphics.setStroke(
@@ -1059,9 +1138,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
             graphics.setColor(
-                    calibrationResult
-                            .variant
-                            .color
+                    calibrationResult.variant.color
             );
 
 
@@ -1125,7 +1202,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
         int legendY =
-                100;
+                95;
 
 
         graphics.setColor(
@@ -1134,10 +1211,11 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
         graphics.fillRect(
-                legendX - 10,
-                legendY - 30,
-                230,
-                VARIANTS.length * 26 + 45
+                legendX - 12,
+                legendY - 32,
+
+                245,
+                VARIANTS.length * 27 + 48
         );
 
 
@@ -1154,7 +1232,7 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
         legendY +=
-                30;
+                31;
 
 
         for (CalibrationVariant variant :
@@ -1170,20 +1248,20 @@ private static final CalibrationVariant[] VARIANTS = {
                     legendX,
                     legendY - 5,
 
-                    legendX + 30,
+                    legendX + 32,
                     legendY - 5
             );
 
 
             graphics.drawString(
                     variant.name,
-                    legendX + 40,
+                    legendX + 43,
                     legendY
             );
 
 
             legendY +=
-                    26;
+                    27;
         }
 
 
@@ -1195,24 +1273,32 @@ private static final CalibrationVariant[] VARIANTS = {
 
 
     // =========================================================
-    // INTERNAL TYPES
+    // TYPES
     // =========================================================
+
+    private enum ForceModel {
+
+        OLD_LINEAR,
+
+        BELL
+    }
+
 
     private static class CalibrationVariant {
 
         private final String name;
 
-        private final double strength;
+        private final ForceModel forceModel;
 
-        private final double exponent;
+        private final double strength;
 
         private final Color color;
 
 
         private CalibrationVariant(
                 String name,
+                ForceModel forceModel,
                 double strength,
-                double exponent,
                 Color color
         ) {
 
@@ -1220,12 +1306,12 @@ private static final CalibrationVariant[] VARIANTS = {
                     name;
 
 
+            this.forceModel =
+                    forceModel;
+
+
             this.strength =
                     strength;
-
-
-            this.exponent =
-                    exponent;
 
 
             this.color =
