@@ -83,24 +83,63 @@ public class TrajectoryCalculator {
      * Wir vergleichen unsere berechnete Kurve danach mit
      * deinen echten gestrichelten ShellShock-Trajectories.
      */
-    private static final double BLACK_HOLE_MAX_ACCELERATION =
-            8.0;
+    // =========================================================
+// BLACK HOLE
+// =========================================================
+
+/*
+ * Aus zwei echten Referenzaufnahmen kalibriert:
+ *
+ * Power 55 / Angle 33
+ * Power 65 / Angle 33
+ *
+ * Das Black Hole verhält sich NICHT wie:
+ *
+ *      force ~ (1 - r/R)^2
+ *
+ * und auch nicht wie klassische 1/r²-Gravitation.
+ *
+ * Die beste gemeinsame Näherung für beide aufgenommenen
+ * Trajectories ist:
+ *
+ *      q = distance / influenceRadius
+ *
+ *      acceleration =
+ *          MAX_ACCELERATION
+ *          *
+ *          (1 - q^EDGE_EXPONENT)
+ *
+ *
+ * Eigenschaften:
+ *
+ * q = 1.0:
+ *      acceleration = 0
+ *
+ * weiter innen:
+ *      Kraft steigt relativ schnell
+ *
+ * nahe am Zentrum:
+ *      Kraft sättigt bei ungefähr MAX_ACCELERATION
+ *
+ *
+ * Dadurch entstehen die großen runden Orbits / Slingshots
+ * aus dem echten Spiel, ohne dass die Kraft Richtung Core
+ * mathematisch explodiert.
+ */
+private static final double BLACK_HOLE_MAX_ACCELERATION =
+        9.80;
 
 
-    /*
-     * Stärke:
-     *
-     * Rand des Influence-Radius:
-     * praktisch 0
-     *
-     * Richtung Core:
-     * zunehmend stärker
-     *
-     * exponent = 2:
-     * weicher Einstieg, starke Kurve innen.
-     */
-    private static final double BLACK_HOLE_FORCE_EXPONENT =
-            2.0;
+/*
+ * Video-Fit:
+ *
+ * optimal ungefähr:
+ * 5.557
+ *
+ * 5.56 reicht für die normale Simulation vollkommen aus.
+ */
+private static final double BLACK_HOLE_EDGE_EXPONENT =
+        5.56;
 
 
     public TrajectoryCalculator(
@@ -925,391 +964,196 @@ public class TrajectoryCalculator {
     // BLACK HOLE FORCE
     // =========================================================
 
-    private double[] getBlackHoleAcceleration(
-            double x,
-            double y,
-            List<BlackHole> blackHoles
-    ) {
+   private double[] getBlackHoleAcceleration(
+        double x,
+        double y,
+        List<BlackHole> blackHoles
+) {
 
-        double totalAx =
-                0.0;
-
-        double totalAy =
-                0.0;
+    double totalAx =
+            0.0;
 
 
-        /*
-         * Mehrere Black Holes:
-         *
-         * Kräfte addieren sich.
-         */
-        for (BlackHole blackHole :
-                blackHoles) {
+    double totalAy =
+            0.0;
 
 
-            double dx =
-                    blackHole.getCenterX()
-                    -
-                    x;
+    /*
+     * Mehrere Black Holes:
+     *
+     * Die Beschleunigungsvektoren werden addiert.
+     */
+    for (BlackHole blackHole :
+            blackHoles) {
 
 
-            double dy =
-                    blackHole.getCenterY()
-                    -
-                    y;
-
-
-            double distanceSquared =
-                    dx * dx
-                    +
-                    dy * dy;
-
-
-            if (distanceSquared
-                    <=
-                EVENT_EPSILON) {
-
-
-                continue;
-            }
-
-
-            double distance =
-                    Math.sqrt(
-                            distanceSquared
-                    );
-
-
-            double influenceRadius =
-                    blackHole.getInfluenceRadius();
-
-
-            if (distance >= influenceRadius) {
-
-                continue;
-            }
-
-
-            /*
-             * 0.0 = äußerster Rand
-             * 1.0 = Zentrum
-             */
-            double normalized =
-                    1.0
-                    -
-                    distance
-                    /
-                    influenceRadius;
-
-
-            double acceleration =
-                    BLACK_HOLE_MAX_ACCELERATION
-                    *
-                    Math.pow(
-                            normalized,
-                            BLACK_HOLE_FORCE_EXPONENT
-                    );
-
-
-            /*
-             * Normalisierte Richtung zum Center.
-             */
-            double nx =
-                    dx
-                    /
-                    distance;
-
-
-            double ny =
-                    dy
-                    /
-                    distance;
-
-
-            totalAx +=
-                    nx
-                    *
-                    acceleration;
-
-
-            totalAy +=
-                    ny
-                    *
-                    acceleration;
-        }
-
-
-        return new double[]{
-                totalAx,
-                totalAy
-        };
-    }
-
-
-    // =========================================================
-    // BLACK HOLE CORE COLLISION
-    // =========================================================
-
-    private BlackHoleCollision findFirstBlackHoleCoreCollision(
-            double startX,
-            double startY,
-            double startTime,
-
-            double endX,
-            double endY,
-            double endTime,
-
-            List<BlackHole> blackHoles
-    ) {
-
-        BlackHoleCollision best =
-                null;
-
-
-        for (BlackHole blackHole :
-                blackHoles) {
-
-
-            BlackHoleCollision collision =
-                    intersectBlackHoleCore(
-                            startX,
-                            startY,
-                            startTime,
-
-                            endX,
-                            endY,
-                            endTime,
-
-                            blackHole
-                    );
-
-
-            if (collision != null &&
-                (
-                        best == null
-                        ||
-                        collision.time
-                                <
-                        best.time
-                )) {
-
-
-                best =
-                        collision;
-            }
-        }
-
-
-        return best;
-    }
-
-
-    private BlackHoleCollision intersectBlackHoleCore(
-            double startX,
-            double startY,
-            double startTime,
-
-            double endX,
-            double endY,
-            double endTime,
-
-            BlackHole blackHole
-    ) {
-
-        /*
-         * Falls wir bereits im Core starten:
-         * sofort zerstört.
-         */
-        if (blackHole.containsCore(
-                startX,
-                startY
-        )) {
-
-
-            return new BlackHoleCollision(
-                    blackHole,
-                    startX,
-                    startY,
-                    startTime
-            );
-        }
-
+        // =====================================================
+        // VECTOR TO BLACK HOLE
+        // =====================================================
 
         double dx =
-                endX
+                blackHole.getCenterX()
                 -
-                startX;
+                x;
 
 
         double dy =
-                endY
+                blackHole.getCenterY()
                 -
-                startY;
+                y;
 
 
-        double fx =
-                startX
-                -
-                blackHole.getCenterX();
-
-
-        double fy =
-                startY
-                -
-                blackHole.getCenterY();
-
-
-        double a =
+        double distanceSquared =
                 dx * dx
                 +
                 dy * dy;
 
 
-        if (a <= EVENT_EPSILON) {
+        if (distanceSquared
+                <=
+            EVENT_EPSILON) {
 
-            return null;
+
+            continue;
         }
 
 
-        double b =
-                2.0
-                *
-                (
-                        fx * dx
-                        +
-                        fy * dy
-                );
-
-
-        double radius =
-                blackHole.getCoreRadius();
-
-
-        double c =
-                fx * fx
-                +
-                fy * fy
-                -
-                radius * radius;
-
-
-        double discriminant =
-                b * b
-                -
-                4.0
-                *
-                a
-                *
-                c;
-
-
-        if (discriminant < 0.0) {
-
-            return null;
-        }
-
-
-        double sqrt =
+        double distance =
                 Math.sqrt(
-                        discriminant
+                        distanceSquared
                 );
 
 
-        double t1 =
-                (
-                        -b
-                        -
-                        sqrt
-                )
+        double influenceRadius =
+                blackHole.getInfluenceRadius();
+
+
+        // =====================================================
+        // OUTSIDE INFLUENCE
+        // =====================================================
+
+        /*
+         * Außerhalb des sichtbaren Wirkungsradius:
+         *
+         * keinerlei Black-Hole-Beschleunigung.
+         */
+        if (distance
+                >=
+            influenceRadius) {
+
+
+            continue;
+        }
+
+
+        // =====================================================
+        // NORMALIZED DISTANCE
+        // =====================================================
+
+        /*
+         * q:
+         *
+         * 0.0 = Mittelpunkt
+         * 1.0 = äußerer Influence-Rand
+         */
+        double q =
+                distance
                 /
-                (
-                        2.0
-                        *
-                        a
+                influenceRadius;
+
+
+        q =
+                Math.max(
+                        0.0,
+                        Math.min(
+                                1.0,
+                                q
+                        )
                 );
 
 
-        double t2 =
-                (
-                        -b
-                        +
-                        sqrt
-                )
-                /
-                (
-                        2.0
-                        *
-                        a
+        // =====================================================
+        // VIDEO-FITTED FORCE CURVE
+        // =====================================================
+
+        /*
+         * Aus den 55/33- und 65/33-Videos:
+         *
+         * a(q) =
+         *
+         * MAX_ACCELERATION
+         * *
+         * (1 - q^EDGE_EXPONENT)
+         *
+         *
+         * Ungefähr:
+         *
+         * q = 1.00 -> 0.00
+         * q = 0.95 -> 2.43
+         * q = 0.90 -> 4.35
+         * q = 0.85 -> 5.83
+         * q = 0.80 -> 6.97
+         * q = 0.70 -> 8.45
+         * q = 0.60 -> 9.23
+         *
+         * Danach sättigt die Kraft langsam gegen 9.80.
+         *
+         * Genau diese Sättigung ist der wichtige Unterschied
+         * zu unseren vorherigen Modellen.
+         */
+        double forceFactor =
+                1.0
+                -
+                Math.pow(
+                        q,
+                        BLACK_HOLE_EDGE_EXPONENT
                 );
 
 
-        double hitFraction =
-                Double.POSITIVE_INFINITY;
+        double acceleration =
+                BLACK_HOLE_MAX_ACCELERATION
+                *
+                forceFactor;
 
 
-        if (t1 >= 0.0 &&
-            t1 <= 1.0) {
+        // =====================================================
+        // NORMALIZED DIRECTION TO CENTER
+        // =====================================================
 
-
-            hitFraction =
-                    t1;
-        }
-
-
-        if (t2 >= 0.0 &&
-            t2 <= 1.0 &&
-            t2 < hitFraction) {
-
-
-            hitFraction =
-                    t2;
-        }
-
-
-        if (!Double.isFinite(
-                hitFraction
-        )) {
-
-
-            return null;
-        }
-
-
-        double hitX =
-                startX
-                +
+        double nx =
                 dx
-                *
-                hitFraction;
+                /
+                distance;
 
 
-        double hitY =
-                startY
-                +
+        double ny =
                 dy
+                /
+                distance;
+
+
+        // =====================================================
+        // ADD ACCELERATION
+        // =====================================================
+
+        totalAx +=
+                nx
                 *
-                hitFraction;
+                acceleration;
 
 
-        double hitTime =
-                startTime
-                +
-                (
-                        endTime
-                        -
-                        startTime
-                )
+        totalAy +=
+                ny
                 *
-                hitFraction;
-
-
-        return new BlackHoleCollision(
-                blackHole,
-                hitX,
-                hitY,
-                hitTime
-        );
+                acceleration;
     }
+
+
+    return new double[]{
+            totalAx,
+            totalAy
+    };
+}
 
 
     // =========================================================
