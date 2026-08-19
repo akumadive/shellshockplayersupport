@@ -33,7 +33,10 @@ public class BlackHoleCalibrationTest {
     // =========================================================
 
     /*
-     * Dein echter Referenzschuss.
+     * Weiterhin exakt dein Referenzschuss:
+     *
+     * Power 55
+     * Angle 33
      */
     private static final double TEST_POWER =
             55.0;
@@ -53,65 +56,88 @@ public class BlackHoleCalibrationTest {
             2500;
 
 
+    // =========================================================
+    // FORCE MODELS
+    // =========================================================
+
     /*
-     * Wir vergleichen diesmal NICHT verschiedene Exponenten
-     * des alten Modells.
+     * Wir testen diesmal verschiedene SHAPES.
      *
-     * Stattdessen:
+     * Alle sind echte radiale Beschleunigung.
      *
-     * LINEAR:
-     * alter S20-Test als Referenz
-     *
-     * BELL:
-     * neue Kraftkurve
-     *
-     *   Außenrand -> 0
-     *   mittlerer Bereich -> maximale Kraft
-     *   Richtung Kern -> wieder schwächer
-     *
-     * Der schwarze Core bleibt trotzdem tödlich.
+     * Unterschied:
+     * Wie verändert sich die Kraft mit der Entfernung?
      */
+    private enum ForceModel {
+
+        /*
+         * Glocke:
+         *
+         * Rand   -> 0
+         * Mitte  -> Maximum
+         * Core   -> wieder schwächer
+         */
+        BELL,
+
+        /*
+         * Glocke, aber Richtung Core bleibt
+         * eine kleine Restkraft übrig.
+         */
+        BELL_WITH_FLOOR,
+
+        /*
+         * Kraft steigt nach innen an,
+         * wird aber bei einem Maximum gedeckelt.
+         */
+        CAPPED_LINEAR
+    }
+
+
+    // =========================================================
+    // VARIANTS
+    // =========================================================
+
     private static final CalibrationVariant[] VARIANTS = {
 
             new CalibrationVariant(
-                    "OLD S20",
-                    ForceModel.OLD_LINEAR,
-                    20.0,
+                    "BELL S8",
+                    ForceModel.BELL,
+                    8.0,
                     Color.WHITE
             ),
 
             new CalibrationVariant(
-                    "BELL S15",
+                    "BELL S12",
                     ForceModel.BELL,
-                    15.0,
+                    12.0,
                     Color.YELLOW
             ),
 
             new CalibrationVariant(
-                    "BELL S20",
+                    "BELL S16",
                     ForceModel.BELL,
-                    20.0,
+                    16.0,
                     Color.ORANGE
             ),
 
             new CalibrationVariant(
-                    "BELL S25",
-                    ForceModel.BELL,
-                    25.0,
+                    "FLOOR S12",
+                    ForceModel.BELL_WITH_FLOOR,
+                    12.0,
                     Color.CYAN
             ),
 
             new CalibrationVariant(
-                    "BELL S30",
-                    ForceModel.BELL,
-                    30.0,
+                    "FLOOR S16",
+                    ForceModel.BELL_WITH_FLOOR,
+                    16.0,
                     Color.GREEN
             ),
 
             new CalibrationVariant(
-                    "BELL S40",
-                    ForceModel.BELL,
-                    40.0,
+                    "CAP S12",
+                    ForceModel.CAPPED_LINEAR,
+                    12.0,
                     Color.MAGENTA
             )
     };
@@ -146,7 +172,7 @@ public class BlackHoleCalibrationTest {
 
 
             // =====================================================
-            // PLAYERS
+            // PLAYER
             // =====================================================
 
             PlayerDetector playerDetector =
@@ -208,21 +234,17 @@ public class BlackHoleCalibrationTest {
 
             System.out.println();
 
-
             System.out.println(
                     "=============================="
             );
 
-
             System.out.println(
-                    "BLACK HOLE CALIBRATION V2"
+                    "BLACK HOLE CALIBRATION V3"
             );
-
 
             System.out.println(
                     "=============================="
             );
-
 
             System.out.println(
                     "SELF: "
@@ -234,17 +256,15 @@ public class BlackHoleCalibrationTest {
                     self.getY()
             );
 
-
             System.out.println(
-                    "Power: "
+                    "Reference Shot: "
                     +
                     TEST_POWER
                     +
-                    " Angle: "
+                    " / "
                     +
                     TEST_ANGLE
             );
-
 
             System.out.println(
                     "Black Holes: "
@@ -264,12 +284,16 @@ public class BlackHoleCalibrationTest {
 
 
             // =====================================================
-            // PHYSICS
+            // PHYSICS MODEL
             // =====================================================
 
             PhysicsModel physicsModel =
                     new PhysicsModel();
 
+
+            // =====================================================
+            // RUN VARIANTS
+            // =====================================================
 
             List<CalibrationResult> results =
                     new ArrayList<>();
@@ -315,22 +339,21 @@ public class BlackHoleCalibrationTest {
             BufferedImage debug =
                     drawCalibration(
                             screenshot,
-                            results,
-                            blackHoles
+                            blackHoles,
+                            results
                     );
 
 
             ImageUtils.saveImage(
                     debug,
-                    "data/screenshots/black_hole_calibration_v2.png"
+                    "data/screenshots/black_hole_calibration_v3.png"
             );
 
 
             System.out.println();
 
-
             System.out.println(
-                    "black_hole_calibration_v2.png gespeichert."
+                    "black_hole_calibration_v3.png gespeichert."
             );
 
 
@@ -343,7 +366,7 @@ public class BlackHoleCalibrationTest {
 
 
     // =========================================================
-    // SIMULATE
+    // SIMULATION
     // =========================================================
 
     private static List<TrajectoryPoint> simulate(
@@ -412,10 +435,10 @@ public class BlackHoleCalibrationTest {
 
 
             // =================================================
-            // ALREADY INSIDE CORE
+            // CORE
             // =================================================
 
-            if (isInsideAnyCore(
+            if (insideAnyCore(
                     x,
                     y,
                     blackHoles
@@ -427,7 +450,7 @@ public class BlackHoleCalibrationTest {
 
 
             // =================================================
-            // BLACK HOLE FORCE
+            // BLACK HOLE ACCELERATION
             // =================================================
 
             double[] blackHoleAcceleration =
@@ -440,21 +463,17 @@ public class BlackHoleCalibrationTest {
 
 
             // =================================================
-            // NORMAL GRAVITY
-            // =================================================
-
-            vy +=
-                    physicsModel.getGravity()
-                    *
-                    TIME_STEP;
-
-
-            // =================================================
-            // BLACK HOLE ACCELERATION
+            // GRAVITY
             // =================================================
 
             vx +=
                     blackHoleAcceleration[0]
+                    *
+                    TIME_STEP;
+
+
+            vy +=
+                    physicsModel.getGravity()
                     *
                     TIME_STEP;
 
@@ -486,34 +505,31 @@ public class BlackHoleCalibrationTest {
 
 
             // =================================================
-            // CORE SEGMENT COLLISION
+            // CORE COLLISION
             // =================================================
 
-            CoreCollision coreCollision =
+            CoreCollision collision =
                     findCoreCollision(
                             x,
                             y,
-
                             nextX,
                             nextY,
-
                             blackHoles
                     );
 
 
-            if (coreCollision != null) {
+            if (collision != null) {
 
 
                 points.add(
                         new TrajectoryPoint(
-                                coreCollision.x,
-                                coreCollision.y,
-
+                                collision.x,
+                                collision.y,
                                 time
                                 +
                                 TIME_STEP
                                 *
-                                coreCollision.segmentFraction
+                                collision.fraction
                         )
                 );
 
@@ -554,7 +570,7 @@ public class BlackHoleCalibrationTest {
 
 
     // =========================================================
-    // BLACK HOLE FORCE
+    // FORCE
     // =========================================================
 
     private static double[] calculateBlackHoleAcceleration(
@@ -622,78 +638,48 @@ public class BlackHoleCalibrationTest {
             }
 
 
-            double forceFactor;
+            // =================================================
+            // NORMALIZED DISTANCE
+            // =================================================
+
+            /*
+             * q:
+             *
+             * 0 = Center
+             * 1 = Influence-Rand
+             */
+            double q =
+                    distance
+                    /
+                    influenceRadius;
 
 
-            if (variant.forceModel
+            q =
+                    clamp(
+                            q,
+                            0.0,
+                            1.0
+                    );
+
+
+            double factor;
+
+
+            // =================================================
+            // BELL
+            // =================================================
+
+            if (variant.model
                     ==
-                ForceModel.OLD_LINEAR) {
+                ForceModel.BELL) {
 
 
                 /*
-                 * ALTER ANSATZ:
-                 *
-                 * Rand   -> 0
-                 * Center -> 1
-                 *
-                 * Genau dieser Ansatz hat bei S20
-                 * den zu engen Orbit erzeugt.
+                 * 0 am Center
+                 * 1 ungefähr bei q = 0.5
+                 * 0 am Rand
                  */
-                double normalized =
-                        1.0
-                        -
-                        distance
-                        /
-                        influenceRadius;
-
-
-                forceFactor =
-                        normalized;
-
-
-            } else {
-
-
-                /*
-                 * NEUER BELL-ANSATZ
-                 *
-                 * q:
-                 *
-                 * 0 = Center
-                 * 1 = Influence-Rand
-                 *
-                 *
-                 *       force
-                 *
-                 *         ^
-                 *         |       /\
-                 *         |      /  \
-                 *         |     /    \
-                 *         |____/______\____> q
-                 *             0.5      1
-                 *
-                 *
-                 * Formel:
-                 *
-                 * 4 * q * (1-q)
-                 *
-                 *
-                 * q=1.0 -> 0
-                 * q=0.5 -> 1
-                 * q=0.0 -> 0
-                 *
-                 *
-                 * Dadurch steigt die Kraft beim Eintritt
-                 * zunächst an, explodiert aber NICHT mehr
-                 * Richtung Core.
-                 */
-                double q =
-                        distance
-                        /
-                        influenceRadius;
-
-
-                forceFactor =
+                factor =
                         4.0
                         *
                         q
@@ -705,26 +691,111 @@ public class BlackHoleCalibrationTest {
                         );
 
 
-                forceFactor =
-                        Math.max(
-                                0.0,
-                                Math.min(
-                                        1.0,
-                                        forceFactor
+            // =================================================
+            // BELL WITH FLOOR
+            // =================================================
+
+            } else if (variant.model
+                       ==
+                       ForceModel.BELL_WITH_FLOOR) {
+
+
+                /*
+                 * Gleiches Bell-Modell,
+                 * aber nahe Core bleibt ca. 20 %
+                 * der Maximalwirkung bestehen.
+                 *
+                 * Damit vermeiden wir:
+                 *
+                 * "direkt am Core plötzlich gar keine Kraft".
+                 */
+                double bell =
+                        4.0
+                        *
+                        q
+                        *
+                        (
+                                1.0
+                                -
+                                q
+                        );
+
+
+                factor =
+                        0.20
+                        +
+                        0.80
+                        *
+                        bell;
+
+
+                /*
+                 * Am äußeren Rand trotzdem auf 0 ziehen.
+                 */
+                factor *=
+                        (
+                                1.0
+                                -
+                                Math.pow(
+                                        q,
+                                        6.0
                                 )
+                        );
+
+
+            // =================================================
+            // CAPPED LINEAR
+            // =================================================
+
+            } else {
+
+
+                /*
+                 * Wie das alte lineare Modell:
+                 *
+                 * weiter innen -> stärker
+                 *
+                 * ABER:
+                 * maximal 55 %.
+                 *
+                 * Dadurch gibt es keinen explosiven
+                 * Nahbereich mehr.
+                 */
+                double inward =
+                        1.0
+                        -
+                        q;
+
+
+                factor =
+                        Math.min(
+                                inward,
+                                0.55
                         );
             }
 
 
+            factor =
+                    Math.max(
+                            0.0,
+                            factor
+                    );
+
+
+            // =================================================
+            // ACCELERATION
+            // =================================================
+
             double acceleration =
                     variant.strength
                     *
-                    forceFactor;
+                    factor;
 
 
-            /*
-             * Richtung bleibt radial zum Mittelpunkt.
-             */
+            // =================================================
+            // DIRECTION TO CENTER
+            // =================================================
+
             double nx =
                     dx
                     /
@@ -761,7 +832,7 @@ public class BlackHoleCalibrationTest {
     // CORE
     // =========================================================
 
-    private static boolean isInsideAnyCore(
+    private static boolean insideAnyCore(
             double x,
             double y,
             List<BlackHole> blackHoles
@@ -786,17 +857,11 @@ public class BlackHoleCalibrationTest {
     }
 
 
-    // =========================================================
-    // CORE COLLISION
-    // =========================================================
-
     private static CoreCollision findCoreCollision(
             double startX,
             double startY,
-
             double endX,
             double endY,
-
             List<BlackHole> blackHoles
     ) {
 
@@ -808,7 +873,7 @@ public class BlackHoleCalibrationTest {
                 blackHoles) {
 
 
-            CoreCollision collision =
+            CoreCollision candidate =
                     intersectCircle(
                             startX,
                             startY,
@@ -823,20 +888,18 @@ public class BlackHoleCalibrationTest {
                     );
 
 
-            if (collision == null) {
-
-                continue;
-            }
-
-
-            if (best == null ||
-                collision.segmentFraction
-                        <
-                best.segmentFraction) {
+            if (candidate != null &&
+                (
+                        best == null
+                        ||
+                        candidate.fraction
+                                <
+                        best.fraction
+                )) {
 
 
                 best =
-                        collision;
+                        candidate;
             }
         }
 
@@ -942,9 +1005,7 @@ public class BlackHoleCalibrationTest {
                 )
                 /
                 (
-                        2.0
-                        *
-                        a
+                        2.0 * a
                 );
 
 
@@ -956,9 +1017,7 @@ public class BlackHoleCalibrationTest {
                 )
                 /
                 (
-                        2.0
-                        *
-                        a
+                        2.0 * a
                 );
 
 
@@ -995,18 +1054,13 @@ public class BlackHoleCalibrationTest {
 
 
         return new CoreCollision(
-
                 startX
                 +
-                dx
-                *
-                t,
+                dx * t,
 
                 startY
                 +
-                dy
-                *
-                t,
+                dy * t,
 
                 t
         );
@@ -1019,11 +1073,11 @@ public class BlackHoleCalibrationTest {
 
     private static BufferedImage drawCalibration(
             BufferedImage source,
-            List<CalibrationResult> results,
-            List<BlackHole> blackHoles
+            List<BlackHole> blackHoles,
+            List<CalibrationResult> results
     ) {
 
-        BufferedImage result =
+        BufferedImage output =
                 new BufferedImage(
                         source.getWidth(),
                         source.getHeight(),
@@ -1032,7 +1086,7 @@ public class BlackHoleCalibrationTest {
 
 
         Graphics2D graphics =
-                result.createGraphics();
+                output.createGraphics();
 
 
         graphics.drawImage(
@@ -1050,42 +1104,42 @@ public class BlackHoleCalibrationTest {
 
 
         // =====================================================
-        // BLACK HOLES
+        // BLACK HOLE DEBUG
         // =====================================================
-
-        graphics.setStroke(
-                new BasicStroke(
-                        1.5f
-                )
-        );
-
 
         for (BlackHole blackHole :
                 blackHoles) {
 
 
-            int centerX =
+            int cx =
                     (int) Math.round(
                             blackHole.getCenterX()
                     );
 
 
-            int centerY =
+            int cy =
                     (int) Math.round(
                             blackHole.getCenterY()
                     );
 
 
-            int influenceRadius =
+            int influence =
                     (int) Math.round(
                             blackHole.getInfluenceRadius()
                     );
 
 
-            int coreRadius =
+            int core =
                     (int) Math.round(
                             blackHole.getCoreRadius()
                     );
+
+
+            graphics.setStroke(
+                    new BasicStroke(
+                            1.5f
+                    )
+            );
 
 
             graphics.setColor(
@@ -1099,11 +1153,11 @@ public class BlackHoleCalibrationTest {
 
 
             graphics.drawOval(
-                    centerX - influenceRadius,
-                    centerY - influenceRadius,
+                    cx - influence,
+                    cy - influence,
 
-                    influenceRadius * 2,
-                    influenceRadius * 2
+                    influence * 2,
+                    influence * 2
             );
 
 
@@ -1113,11 +1167,11 @@ public class BlackHoleCalibrationTest {
 
 
             graphics.drawOval(
-                    centerX - coreRadius,
-                    centerY - coreRadius,
+                    cx - core,
+                    cy - core,
 
-                    coreRadius * 2,
-                    coreRadius * 2
+                    core * 2,
+                    core * 2
             );
         }
 
@@ -1133,17 +1187,17 @@ public class BlackHoleCalibrationTest {
         );
 
 
-        for (CalibrationResult calibrationResult :
+        for (CalibrationResult result :
                 results) {
 
 
             graphics.setColor(
-                    calibrationResult.variant.color
+                    result.variant.color
             );
 
 
             List<TrajectoryPoint> trajectory =
-                    calibrationResult.trajectory;
+                    result.trajectory;
 
 
             for (int i = 1;
@@ -1198,11 +1252,11 @@ public class BlackHoleCalibrationTest {
 
 
         int legendX =
-                25;
+                24;
 
 
         int legendY =
-                95;
+                94;
 
 
         graphics.setColor(
@@ -1212,10 +1266,10 @@ public class BlackHoleCalibrationTest {
 
         graphics.fillRect(
                 legendX - 12,
-                legendY - 32,
+                legendY - 34,
 
-                245,
-                VARIANTS.length * 27 + 48
+                255,
+                VARIANTS.length * 27 + 50
         );
 
 
@@ -1232,7 +1286,7 @@ public class BlackHoleCalibrationTest {
 
 
         legendY +=
-                31;
+                32;
 
 
         for (CalibrationVariant variant :
@@ -1268,7 +1322,27 @@ public class BlackHoleCalibrationTest {
         graphics.dispose();
 
 
-        return result;
+        return output;
+    }
+
+
+    // =========================================================
+    // HELPERS
+    // =========================================================
+
+    private static double clamp(
+            double value,
+            double min,
+            double max
+    ) {
+
+        return Math.max(
+                min,
+                Math.min(
+                        max,
+                        value
+                )
+        );
     }
 
 
@@ -1276,19 +1350,11 @@ public class BlackHoleCalibrationTest {
     // TYPES
     // =========================================================
 
-    private enum ForceModel {
-
-        OLD_LINEAR,
-
-        BELL
-    }
-
-
     private static class CalibrationVariant {
 
         private final String name;
 
-        private final ForceModel forceModel;
+        private final ForceModel model;
 
         private final double strength;
 
@@ -1297,7 +1363,7 @@ public class BlackHoleCalibrationTest {
 
         private CalibrationVariant(
                 String name,
-                ForceModel forceModel,
+                ForceModel model,
                 double strength,
                 Color color
         ) {
@@ -1306,8 +1372,8 @@ public class BlackHoleCalibrationTest {
                     name;
 
 
-            this.forceModel =
-                    forceModel;
+            this.model =
+                    model;
 
 
             this.strength =
@@ -1348,25 +1414,23 @@ public class BlackHoleCalibrationTest {
 
         private final double y;
 
-        private final double segmentFraction;
+        private final double fraction;
 
 
         private CoreCollision(
                 double x,
                 double y,
-                double segmentFraction
+                double fraction
         ) {
 
             this.x =
                     x;
 
-
             this.y =
                     y;
 
-
-            this.segmentFraction =
-                    segmentFraction;
+            this.fraction =
+                    fraction;
         }
     }
 }
